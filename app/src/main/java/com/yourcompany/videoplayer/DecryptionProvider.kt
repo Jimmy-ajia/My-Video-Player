@@ -29,10 +29,9 @@ class DecryptionProvider : ContentProvider() {
     override fun getType(uri: Uri): String? {
         val file = uri.path?.let(::File) ?: return null
         if (!EncryptedMediaContainer.isContainer(file)) return null
-        val extension = EncryptedMediaContainer.open(
-            file,
-            LocalMediaKeyStore.getOrCreateWrappingKey()
-        ).use { it.originalExtension }
+        val appContext = context ?: return null
+        val extension = LocalMediaKeyStore.openEncryptedMedia(appContext, file)
+            .use { it.originalExtension }
         return EncryptedMediaMimeType.fromExtension(extension)
     }
     override fun insert(uri: Uri, values: ContentValues?) = null
@@ -46,14 +45,15 @@ class DecryptionProvider : ContentProvider() {
             throw FileNotFoundException("Unsupported or invalid encrypted media container.")
         }
 
+        val appContext = context ?: throw FileNotFoundException("The media provider is unavailable.")
         val reader = try {
-            EncryptedMediaContainer.open(file, LocalMediaKeyStore.getOrCreateWrappingKey())
+            LocalMediaKeyStore.openEncryptedMedia(appContext, file)
         } catch (error: Exception) {
             throw FileNotFoundException(error.message ?: "Unable to open encrypted media.").also {
                 it.initCause(error)
             }
         }
-        val storageManager = context?.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+        val storageManager = appContext.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
             ?: run {
                 reader.close()
                 throw FileNotFoundException("Proxy file descriptors are unavailable.")

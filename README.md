@@ -6,7 +6,8 @@
 
 - 浏览本地视频并进行播放、进度拖动、音轨/字幕选择等播放器操作。
 - 将视频文件内容按固定大小分块，以 AES-GCM 加密和认证。
-- 文件密钥由 Android Keystore 中不可导出的 AES 主密钥包装。
+- 每个文件的数据密钥由本地恢复主密钥包装；设备内的恢复主密钥由 Android Keystore 密钥加密保存。
+- 可导出/导入口令保护的 `.mpvkey` 恢复文件，以便重装应用后恢复新加密的视频。
 - ExoPlayer 优先播放；ExoPlayer 报错时使用 libVLC 尝试兜底。
 - 加密不解析 MP4 sample 表或修改原始容器字节，因此加密层可处理多种媒体容器；实际可播放性由 ExoPlayer/libVLC 的 demuxer、codec 和设备解码能力决定。
 
@@ -29,7 +30,8 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 | `VideoRepository`、`VideoFile` | 扫描视频、读取基本信息并识别加密容器和旧格式。 |
 | `SettingsActivity`、`VideoPickerActivity` | 选择媒体文件，执行加密转换并显示进度和错误。 |
 | `EncryptedMediaContainer` | 定义 `.mpv` 二进制格式，实现加密、认证和随机范围解密。 |
-| `LocalMediaKeyStore` | 在 Android Keystore 中创建/获取本机 AES 包装密钥。 |
+| `LocalMediaKeyStore` | 本地安全保存恢复主密钥，并兼容读取旧版 Keystore 密钥加密的文件。 |
+| `RecoveryKeyBackup` | 使用口令加密/解密 `.mpvkey` 恢复文件。 |
 | `EncryptedVideoUri`、`DecryptionProvider` | 为播放器提供只读虚拟媒体文件描述符。 |
 | `PlayerActivity`、`PlaybackService` | ExoPlayer 播放、播放控制和 MediaSession。 |
 | `VlcFallbackActivity` | ExoPlayer 播放失败后用 libVLC 重试播放。 |
@@ -41,7 +43,7 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 1. 用户在转换界面选择视频文件。
 2. `EncryptedMediaContainer` 使用文件扩展名记录容器类型，不解析/改写 MP4 或其他容器结构。
 3. 为每个文件生成随机 256 位数据密钥和随机 nonce 前缀。
-4. 数据密钥及原始扩展名由 Android Keystore 主密钥通过 AES-GCM 包装。
+4. 数据密钥及原始扩展名由本地恢复主密钥通过 AES-GCM 包装；恢复主密钥的本机副本由 Android Keystore 密钥加密保存。
 5. 输入内容按 1 MiB 分块；每个块独立使用 AES-GCM 加密并认证，支持随机读取和认证失败检测。
 6. 输出为 `<原文件名>_encrypted.mpv`，写入源文件所在存储卷的 `Convert` 目录。源文件保持原样，不会自动删除。
 
@@ -54,6 +56,13 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 5. 普通未加密文件也可在 ExoPlayer 失败后交给 VLC。
 
 该设计不生成完整的解密临时文件，但播放器读取到的数据和应用进程内存中的密钥/明文仍可被运行时访问。
+
+### 恢复密钥
+
+- 在设置页选择“Export recovery key”，将 `.mpvkey` 文件保存到本地；导出时需设置并确认至少 12 个字符的口令。恢复文件使用 PBKDF2-HMAC-SHA256 派生密钥和 AES-GCM 加密。
+- 重装应用后，先在设置页选择“Import recovery key”，选择 `.mpvkey` 文件并输入原口令，再播放由该恢复主密钥加密的视频。
+- 新恢复主密钥只用于启用此功能后加密的文件。更早的文件仍依赖原安装中的不可导出 Keystore 密钥；按当前迁移范围，这些文件不会自动迁移，卸载应用后无法通过新恢复文件解锁。
+- 恢复文件和口令应分别妥善备份。遗失恢复文件或忘记口令都无法恢复密钥；口令不保存在应用内。
 
 ## `.mpv` 容器 v1
 
@@ -96,8 +105,9 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 
 ## 密钥与云盘安全边界
 
-- 每台设备上的 Android Keystore 主密钥不可导出，复制 `.mpv` 文件到云盘或另一台设备后，另一设备通常无法解包文件密钥。这适用于“云端存密文、原设备本地播放”的场景。
-- **该方案不是跨设备密钥同步方案。** 应用卸载、Keystore 密钥被清除/重置或设备更换后，已有 `.mpv` 文件可能永久无法恢复。若要求多设备播放，需要后端密钥托管/授权下发，并设计账号恢复和撤销机制。
+- 设备内的恢复主密钥由不可导出的 Android Keystore 密钥加密保存；若用户导出 `.mpvkey` 并妥善保管口令，可在重装应用后导入恢复新加密文件。
+- **尚未导出恢复文件的 `.mpv` 不能跨安装恢复。** 旧版 Keystore 密钥加密的文件也不包含在新恢复文件内。Keystore 重置、应用卸载或设备更换前，应确认目标文件对应的恢复密钥已导出且可用。
+- 恢复文件是口令保护的离线备份，不提供账号同步、远程撤销或找回口令功能。口令过弱可能被离线猜测；建议使用独立、强口令。
 - 保护仅适用于上传 `.mpv` 加密输出的情形。转换不会删除原文件；若将原始视频也上传，云端仍可读取原文件。
 - 当前输出文件名保留源视频名称的一部分，路径、名称、文件大小和访问时间等外部元数据不会加密。
 - Android Keystore 提高静态密钥提取难度，但不防拥有设备/应用运行时控制权的攻击者；播放时密钥和解密数据必须在应用可用。
@@ -121,4 +131,4 @@ Android SDK 路径通过未纳入版本控制的 `local.properties` 中的 `sdk.
 - `flower.mp4` 和 `flower.webm` 来自 [MDN CC0 video samples](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/)。
 - `flower.mkv`、`flower.mov`、`flower.avi`、`flower.flv`、`flower.ts`、`flower.wmv`、`flower.3gp`、`flower.vob` 是使用 FFmpeg 从上述 CC0 样本生成的容器变体。
 
-单元测试会对这些真实容器样本逐字节加密和还原比对，并覆盖跨 1 MiB 边界的随机范围读取、错误包装密钥拒绝、数据块篡改拒绝及头部修改拒绝。样本测试只验证加密容器的字节保真，不代表播放器兼容性；仍需在真实设备上验证 Android Keystore、MediaStore 对 `.mpv` 的发现、ExoPlayer 到 VLC 的回退，以及各扩展名的实际播放。
+单元测试会对这些真实容器样本逐字节加密和还原比对，并覆盖跨 1 MiB 边界的随机范围读取、错误包装密钥拒绝、数据块篡改拒绝及头部修改拒绝。恢复密钥测试覆盖口令加密往返、错误口令/篡改拒绝及导出口令长度限制。样本测试只验证加密容器的字节保真，不代表播放器兼容性；仍需在真实设备上验证 Android Keystore、密钥文件选择器、MediaStore 对 `.mpv` 的发现、ExoPlayer 到 VLC 的回退，以及各扩展名的实际播放。

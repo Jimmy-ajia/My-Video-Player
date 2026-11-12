@@ -43,7 +43,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Encryption key"
+                        android:text="Recovery key"
                         android:textColor="@color/white"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -51,10 +51,31 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="This version uses an app-built-in key. It is temporary and can be extracted from the app; server-issued keys are planned for a later version."
+                        android:text="Export a password-protected recovery file before uninstalling. After reinstall, import it before encrypting new videos. Older files use a non-exportable key and cannot be restored."
                         android:textColor="#AAAAAA"
                         android:textSize="12sp"
                         android:layout_marginBottom="4dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_export_recovery_key"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:text="Export recovery key" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_import_recovery_key"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Import recovery key" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
