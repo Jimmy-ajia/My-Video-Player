@@ -66,7 +66,7 @@ class RecoveryKeyBackupTest {
     }
 
     @Test
-    fun importedRecoveryKeyOpensEncryptedVideo() {
+    fun importedRecoveryKeyOpensLegacyMpvEncryptedVideo() {
         val recoveryKey = ByteArray(32) { (it * 9 + 1).toByte() }
         val password = "test recovery phrase 2026".toCharArray()
         val source = File.createTempFile("recoverable", ".mp4")

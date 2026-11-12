@@ -18,7 +18,7 @@ class EncryptedMediaContainerTest {
     fun encryptsAnyMediaBytesAndSupportsRandomRangeReadsAcrossChunks() {
         val sourceBytes = ByteArray(2 * 1024 * 1024 + 73).also(SecureRandom()::nextBytes)
         val source = File.createTempFile("source", ".mkv")
-        val encrypted = File.createTempFile("encrypted", ".mpv")
+        val encrypted = File.createTempFile("encrypted", ".oxu")
         try {
             source.writeBytes(sourceBytes)
             EncryptedMediaContainer.encrypt(source, encrypted, "mkv", wrappingKey)
@@ -43,7 +43,7 @@ class EncryptedMediaContainerTest {
     @Test
     fun rejectsWrongWrappingKeyAndTamperedChunks() {
         val source = File.createTempFile("source", ".mp4")
-        val encrypted = File.createTempFile("encrypted", ".mpv")
+        val encrypted = File.createTempFile("encrypted", ".oxu")
         try {
             source.writeBytes(ByteArray(2048) { it.toByte() })
             EncryptedMediaContainer.encrypt(source, encrypted, "mp4", wrappingKey)
@@ -70,7 +70,7 @@ class EncryptedMediaContainerTest {
     @Test
     fun rejectsInvalidHeaderChanges() {
         val source = File.createTempFile("source", ".mov")
-        val encrypted = File.createTempFile("encrypted", ".mpv")
+        val encrypted = File.createTempFile("encrypted", ".oxu")
         try {
             source.writeBytes(ByteArray(32) { it.toByte() })
             EncryptedMediaContainer.encrypt(source, encrypted, "mov", wrappingKey)
@@ -92,7 +92,7 @@ class EncryptedMediaContainerTest {
     fun outputDoesNotExposeSourceContent() {
         val marker = "cloud-drive-must-only-see-ciphertext-".repeat(12)
         val source = File.createTempFile("source", ".avi")
-        val encrypted = File.createTempFile("encrypted", ".mpv")
+        val encrypted = File.createTempFile("encrypted", ".oxu")
         try {
             source.writeText(marker)
             EncryptedMediaContainer.encrypt(source, encrypted, "avi", wrappingKey)
@@ -106,6 +106,29 @@ class EncryptedMediaContainerTest {
     }
 
     @Test
+    fun decryptsToFileWithoutChangingTheEncryptedInput() {
+        val sourceBytes = ByteArray(1024 * 1024 + 19).also(SecureRandom()::nextBytes)
+        val source = File.createTempFile("source", ".mp4")
+        val encrypted = File.createTempFile("encrypted", ".oxu")
+        val decrypted = File.createTempFile("decrypted", ".mp4")
+        try {
+            source.writeBytes(sourceBytes)
+            EncryptedMediaContainer.encrypt(source, encrypted, "mp4", wrappingKey)
+            EncryptedMediaContainer.open(encrypted, wrappingKey).use { reader ->
+                EncryptedMediaContainer.decrypt(reader, decrypted)
+            }
+
+            assertArrayEquals(sourceBytes, decrypted.readBytes())
+            assertTrue(source.isFile)
+            assertTrue(encrypted.isFile)
+        } finally {
+            source.delete()
+            encrypted.delete()
+            decrypted.delete()
+        }
+    }
+
+    @Test
     fun encryptsAndRestoresRetainedVideoSamples() {
         val extensions = listOf("mp4", "webm", "mkv", "mov", "avi", "flv", "ts", "wmv", "3gp", "vob")
 
@@ -113,7 +136,7 @@ class EncryptedMediaContainerTest {
             val resource = javaClass.getResourceAsStream("/video-samples/flower.$extension")
                 ?: error("Missing video sample: flower.$extension")
             val source = File.createTempFile("sample-$extension", ".$extension")
-            val encrypted = File.createTempFile("sample-encrypted-", ".mpv")
+            val encrypted = File.createTempFile("sample-encrypted-", ".oxu")
 
             try {
                 resource.use { input ->

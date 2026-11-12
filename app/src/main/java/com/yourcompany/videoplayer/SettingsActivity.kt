@@ -6,6 +6,7 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.text.InputType
 import android.view.View
 import android.widget.EditText
@@ -23,8 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.*
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.GeneralSecurityException
 
 class SettingsActivity : AppCompatActivity() {
@@ -44,6 +43,11 @@ class SettingsActivity : AppCompatActivity() {
     private val recoveryBackupPicker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) showRecoveryPasswordDialog(uri, exporting = false)
+        }
+
+    private val scanDirectoryPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) addScanDirectory(uri)
         }
 
     private val videoPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -83,6 +87,10 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_import_recovery_key).setOnClickListener {
             recoveryBackupPicker.launch(arrayOf("*/*"))
         }
+        findViewById<View>(R.id.btn_add_scan_directory).setOnClickListener {
+            scanDirectoryPicker.launch(null)
+        }
+        refreshScanDirectories()
     }
 
     private fun showRecoveryPasswordDialog(uri: Uri, exporting: Boolean) {
@@ -238,17 +246,122 @@ class SettingsActivity : AppCompatActivity() {
         ).show()
     }
 
-    private fun standardizePath(path: String): String {
-        if (path.isEmpty()) return path
-        return path.replace("/mnt/media_rw/", "/storage/").replace("//", "/")
+    private fun addScanDirectory(uri: Uri) {
+        try {
+            val directory = resolveExternalStorageTree(uri)
+            if (ScanDirectoryStore.add(applicationContext, directory.path)) {
+                Toast.makeText(this, "已添加扫描目录。", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "该目录已在扫描列表中。", Toast.LENGTH_SHORT).show()
+            }
+            refreshScanDirectories()
+        } catch (error: IOException) {
+            Toast.makeText(this, error.message ?: "无法添加此目录。", Toast.LENGTH_LONG).show()
+        } catch (error: IllegalArgumentException) {
+            Toast.makeText(this, error.message ?: "无法识别所选目录。", Toast.LENGTH_LONG).show()
+        } catch (error: SecurityException) {
+            Toast.makeText(
+                this,
+                error.message ?: "无法添加此目录。",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
-    private fun getVolumeRoot(path: String): String {
-        val stdPath = standardizePath(path)
-        if (stdPath.startsWith("/storage/emulated/0")) return "/storage/emulated/0"
-        val parts = stdPath.split("/")
-        if (parts.size >= 3 && parts[1] == "storage") return "/storage/${parts[2]}"
-        return Environment.getExternalStorageDirectory().absolutePath
+    private fun resolveExternalStorageTree(uri: Uri): File {
+        if (uri.authority != "com.android.externalstorage.documents") {
+            throw IOException("请选择 Android 共享存储或 SD 卡中的目录。")
+        }
+        val documentId = DocumentsContract.getTreeDocumentId(uri)
+        val separator = documentId.indexOf(':')
+        if (separator <= 0) throw IOException("无法识别所选目录。")
+
+        val volumeId = documentId.substring(0, separator)
+        val relativePath = documentId.substring(separator + 1)
+        val volumeRoot = if (volumeId.equals("primary", ignoreCase = true)) {
+            Environment.getExternalStorageDirectory()
+        } else {
+            File("/storage", volumeId)
+        }
+        val canonicalRoot = volumeRoot.canonicalFile
+        val directory = File(canonicalRoot, relativePath).canonicalFile
+        if (directory != canonicalRoot &&
+            !directory.path.startsWith(canonicalRoot.path + File.separator)
+        ) {
+            throw IOException("所选目录不在共享存储或 SD 卡范围内。")
+        }
+        if (!directory.isDirectory) throw IOException("所选目录不存在或不可访问。")
+        return directory
+    }
+
+    private fun refreshScanDirectories() {
+        val container = findViewById<LinearLayout>(R.id.scan_directories_container)
+        container.removeAllViews()
+        val presetPaths = ScanDirectoryStore.defaults().map { it.canonicalPath }.toSet()
+        val paths = ScanDirectoryStore.getPaths(applicationContext)
+        if (paths.isEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "尚未添加扫描目录。"
+                setTextColor(0xFFAAAAAA.toInt())
+                textSize = 13f
+            })
+            return
+        }
+
+        paths.forEach { path ->
+            val directory = File(path)
+            val isPreset = try {
+                directory.canonicalPath in presetPaths
+            } catch (_: IOException) {
+                false
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                val padding = (8 * resources.displayMetrics.density).toInt()
+                setPadding(0, padding, 0, padding)
+            }
+            val label = TextView(this).apply {
+                text = "${directory.name}${if (isPreset) "（预设）" else ""}\n$path"
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 13f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            }
+            val removeButton = android.widget.ImageButton(this).apply {
+                setImageResource(R.drawable.ic_delete)
+                contentDescription = "删除扫描目录 ${directory.name}"
+                background = getDrawable(
+                    android.util.TypedValue().let { value ->
+                        theme.resolveAttribute(
+                            android.R.attr.selectableItemBackgroundBorderless,
+                            value,
+                            true
+                        )
+                        value.resourceId
+                    }
+                )
+                setOnClickListener {
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle("删除扫描目录")
+                        .setMessage("从扫描列表中移除 ${directory.name}？目录中的文件不会被删除。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("移除") { _, _ ->
+                            ScanDirectoryStore.remove(applicationContext, path)
+                            refreshScanDirectories()
+                        }
+                        .show()
+                }
+            }
+            row.addView(label)
+            row.addView(removeButton)
+            container.addView(row)
+        }
     }
 
     private fun startBatchConversion(paths: List<String>) {
@@ -259,21 +372,11 @@ class SettingsActivity : AppCompatActivity() {
             var successCount = 0
             val failures = mutableListOf<String>()
             paths.forEachIndexed { index, path ->
-                val stdPath = standardizePath(path)
-                val file = File(stdPath)
-                if (!file.exists()) {
+                val file = File(path)
+                if (!file.isFile) {
                     failures += "${file.name}: source file no longer exists"
                     return@forEachIndexed
                 }
-                val volumeRoot = getVolumeRoot(stdPath)
-                val outDir = File(volumeRoot, "Convert")
-                if (!outDir.exists() && !outDir.mkdirs()) {
-                    failures += "${file.name}: could not create the output directory"
-                    return@forEachIndexed
-                }
-                val finalName = "${file.nameWithoutExtension}_encrypted.${EncryptedMediaContainer.FILE_EXTENSION}"
-                val outFile = File(outDir, finalName)
-                val tempFile = File(outDir, "$finalName.tmp")
 
                 withContext(Dispatchers.Main) {
                     progressText.text = "Securing (${index + 1}/${paths.size}):\n${file.name}"
@@ -282,30 +385,23 @@ class SettingsActivity : AppCompatActivity() {
                 }
                     
                 try {
-                    if (EncryptedMediaContainer.isContainer(file) || VideoFile.isLegacyEncrypted(file.absolutePath)) {
+                    if (EncryptedMediaContainer.isContainer(file)) {
                         throw IOException("This video is already encrypted or uses an unsupported legacy format.")
                     }
-                    EncryptedMediaContainer.encrypt(
-                        file,
-                        tempFile,
-                        file.extension,
-                        LocalMediaKeyStore.getOrCreateWrappingKey(this@SettingsActivity)
-                    ) { progress ->
+                    val outFile = VideoFileConverter.encrypt(applicationContext, file) { progress ->
                         runOnUiThread {
                             progressPercentage.text = "$progress%"
                             linearProgress.progress = progress
                         }
                     }
-                    Files.move(tempFile.toPath(), outFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
                     successCount++
                     MediaScannerConnection.scanFile(
                         this@SettingsActivity,
                         arrayOf(outFile.absolutePath),
-                        arrayOf(EncryptedMediaMimeType.fromExtension(file.extension)),
+                        arrayOf(EncryptedMediaMimeType.fromExtension(outFile.extension)),
                         null
                     )
                 } catch (error: Exception) {
-                    tempFile.delete()
                     failures += "${file.name}: ${error.message ?: "encryption failed"}"
                 }
             }

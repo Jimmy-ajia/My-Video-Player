@@ -19,7 +19,33 @@ class VideoRepository(val context: Context) {
         return p
     }
 
-    fun getVideosFromFolder(folderPath: String = ""): ArrayList<VideoFile> {
+    fun getVideosFromDirectories(directoryPaths: List<String>): ArrayList<VideoFile> {
+        val roots = directoryPaths
+            .map { File(it).canonicalFile }
+            .filter { it.isDirectory }
+        val list = ArrayList<VideoFile>()
+        val foundPaths = mutableSetOf<String>()
+        if (roots.isEmpty()) return list
+
+        getVideosFromFolder(extractMissingDuration = false).forEach { video ->
+            val videoFile = File(video.path).canonicalFile
+            if (roots.any { root -> videoFile.toPath().startsWith(root.toPath()) }) {
+                list.add(video)
+                foundPaths.add(videoFile.path)
+            }
+        }
+
+        roots.forEach { root ->
+            scanManualRecursive(root, list, foundPaths, 0, extractDuration = false)
+        }
+        list.sortWith { left, right -> naturalCompare(left.title.lowercase(), right.title.lowercase()) }
+        return list
+    }
+
+    fun getVideosFromFolder(
+        folderPath: String = "",
+        extractMissingDuration: Boolean = true
+    ): ArrayList<VideoFile> {
         val list = ArrayList<VideoFile>()
         val foundPaths = mutableSetOf<String>()
         val stdFolderPath = standardizePath(folderPath)
@@ -79,7 +105,7 @@ class VideoRepository(val context: Context) {
                         var duration = it.getLong(durationIdx)
                         
                         // 🔥 Fix: MediaStore provides 0 for some videos, try getting it manually
-                        if (duration <= 0) {
+                        if (duration <= 0 && extractMissingDuration) {
                             duration = getDurationManually(stdPath)
                         }
 
@@ -127,12 +153,19 @@ class VideoRepository(val context: Context) {
         return duration
     }
 
-    private fun scanManualRecursive(dir: File, list: MutableList<VideoFile>, foundPaths: MutableSet<String>, depth: Int) {
-        if (!dir.exists() || !dir.isDirectory || depth > 2) return 
+    private fun scanManualRecursive(
+        dir: File,
+        list: MutableList<VideoFile>,
+        foundPaths: MutableSet<String>,
+        depth: Int,
+        extractDuration: Boolean = true
+    ) {
+        if (!dir.exists() || !dir.isDirectory || depth > 20) return
         val videoExtensions = setOf(
             "mp4",
             "m4v",
             EncryptedMediaContainer.FILE_EXTENSION,
+            EncryptedMediaContainer.LEGACY_FILE_EXTENSION,
             "mkv",
             "webm",
             "avi",
@@ -153,7 +186,9 @@ class VideoRepository(val context: Context) {
             dir.listFiles()?.forEach { file ->
                 val stdPath = standardizePath(file.absolutePath)
                 if (file.isDirectory) {
-                    if (!file.name.startsWith(".")) scanManualRecursive(file, list, foundPaths, depth + 1)
+                    if (!file.name.startsWith(".")) {
+                        scanManualRecursive(file, list, foundPaths, depth + 1, extractDuration)
+                    }
                 } else if (file.isFile && videoExtensions.contains(file.extension.lowercase())) {
                     if (!foundPaths.contains(stdPath)) {
                         list.add(VideoFile(
@@ -162,7 +197,7 @@ class VideoRepository(val context: Context) {
                             title = file.name, 
                             folderName = dir.name, 
                             size = file.length(), 
-                            duration = getDurationManually(stdPath), 
+                            duration = if (extractDuration) getDurationManually(stdPath) else 0L,
                             dateModified = file.lastModified() / 1000
                         ))
                         foundPaths.add(stdPath)

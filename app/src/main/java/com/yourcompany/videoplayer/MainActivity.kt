@@ -1,20 +1,22 @@
 package com.yourcompany.videoplayer
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.os.storage.StorageManager
 import android.provider.Settings
-import android.view.MenuItem
 import android.view.View
-import android.view.animation.AnimationUtils
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
@@ -23,62 +25,53 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.lang.reflect.Method
-import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var recyclerView: RecyclerView
-    private lateinit var unifiedAdapter: UnifiedAdapter
-    private lateinit var toolbar: Toolbar
-    private lateinit var toolbarTitle: TextView
-    private lateinit var btnSettings: ImageView
+    private lateinit var videoAdapter: MainVideoAdapter
+    private lateinit var emptyMessage: TextView
+    private lateinit var operationPanel: View
+    private lateinit var operationText: TextView
+    private lateinit var operationProgress: ProgressBar
     private lateinit var fabResume: ExtendedFloatingActionButton
-    private val itemList = ArrayList<Any>()
-    private var currentPath: String? = null
-    private var rootPath: String? = "STORAGE_ROOT"
     private var isLoading = false
-
-    private fun standardizePath(path: String): String {
-        if (path == "STORAGE_ROOT") return path
-        var fixedPath = path.replace("/mnt/media_rw/", "/storage/")
-            .replace("//", "/")
-        if (fixedPath.length > 1 && fixedPath.endsWith("/")) {
-            fixedPath = fixedPath.substring(0, fixedPath.length - 1)
-        }
-        return fixedPath
-    }
+    private var isConverting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        toolbar = findViewById(R.id.toolbar_main)
+        val toolbar = findViewById<Toolbar>(R.id.toolbar_main)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(false)
-
-        toolbarTitle = findViewById(R.id.toolbar_title)
-        btnSettings = findViewById(R.id.btn_settings)
-        recyclerView = findViewById(R.id.folderRecyclerView)
-        recyclerView.layoutManager = LinearLayoutManager(this)
-        
-        val resId = R.anim.item_animation_fall_down
-        val animation = AnimationUtils.loadLayoutAnimation(this, resId)
-        recyclerView.layoutAnimation = animation
-
-        btnSettings.setOnClickListener {
+        findViewById<TextView>(R.id.toolbar_title).text = "Videos"
+        findViewById<ImageView>(R.id.btn_settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        currentPath = rootPath
-        checkPermissions()
-        
+        recyclerView = findViewById(R.id.videoRecyclerView)
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.setHasFixedSize(true)
+        videoAdapter = MainVideoAdapter(
+            context = this,
+            onVideoClick = ::playVideo,
+            onEncryptionToggle = ::requestEncryptionToggle
+        )
+        recyclerView.adapter = videoAdapter
+
+        emptyMessage = findViewById(R.id.video_list_empty)
+        operationPanel = findViewById(R.id.video_operation_panel)
+        operationText = findViewById(R.id.video_operation_text)
+        operationProgress = findViewById(R.id.video_operation_progress)
         fabResume = findViewById(R.id.fab_last_played)
         fabResume.setOnClickListener { playLastWatched() }
+
+        checkPermissions()
     }
 
     override fun onResume() {
@@ -86,252 +79,205 @@ class MainActivity : AppCompatActivity() {
         if (hasPermission()) {
             loadContent()
             updateResumeFab()
-        }
-    }
-
-    private fun updateResumeFab() {
-        val prefs = getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
-        val lastPath = prefs.getString("LAST_PATH", "")
-        if (!lastPath.isNullOrEmpty() && File(lastPath).exists()) {
-            fabResume.visibility = View.VISIBLE
         } else {
-            fabResume.visibility = View.GONE
+            emptyMessage.text = "请授予存储访问权限以扫描视频目录。"
+            emptyMessage.visibility = View.VISIBLE
+            recyclerView.visibility = View.GONE
         }
     }
 
-    private fun playLastWatched() {
-        val prefs = getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
-        val lastPath = prefs.getString("LAST_PATH", "") ?: return
-        val lastFile = File(lastPath)
-        if (lastFile.exists()) {
-            val video = VideoFile(
-                id = prefs.getLong("LAST_ID", -1L),
-                path = lastPath,
-                title = lastFile.name,
-                folderName = lastFile.parentFile?.name ?: "Unknown",
-                size = lastFile.length(),
-                duration = 0
-            )
-            val intent = Intent(this, PlayerActivity::class.java).apply {
-                putExtra("VIDEO_LIST", arrayListOf(video))
-                putExtra("POSITION", 0)
-            }
-            startActivity(intent)
-        }
-    }
-
-    private fun hasPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    private fun hasPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
         } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
         }
-    }
 
     private fun checkPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:$packageName")
-                    startActivityForResult(intent, 102)
-                } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivityForResult(intent, 102)
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (_: ActivityNotFoundException) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                 }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
-                }
-            }
-        } else {
-            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) 
-                Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(permission), 101)
-            }
+        } else if (!hasPermission()) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                REQUEST_STORAGE_PERMISSION
+            )
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQUEST_NOTIFICATION_PERMISSION
+            )
         }
     }
 
     fun loadContent() {
-        if (isLoading) return
+        if (isLoading || isConverting || !hasPermission()) return
         isLoading = true
-        
-        lifecycleScope.launch(Dispatchers.IO) {
+        emptyMessage.text = "正在扫描视频目录…"
+        emptyMessage.visibility = View.VISIBLE
+        recyclerView.visibility = View.GONE
+
+        lifecycleScope.launch {
             try {
-                val repo = VideoRepository(this@MainActivity)
-                val stdCurrentPath = standardizePath(currentPath ?: rootPath!!)
-                
-                val allVideos = if (stdCurrentPath == rootPath) repo.getVideosFromFolder("") else repo.getVideosFromFolder(stdCurrentPath)
-
-                val foldersInCurrentDir = ArrayList<FolderModel>()
-                val videosInCurrentDir = ArrayList<VideoFile>()
-                val processedSubFolders = mutableSetOf<String>()
-
-                if (stdCurrentPath == "STORAGE_ROOT") {
-                    val storageManager = getSystemService(Context.STORAGE_SERVICE) as StorageManager
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        val storageVolumes = storageManager.storageVolumes
-                        for (volume in storageVolumes) {
-                            val path = getVolumePath(volume) ?: continue
-                            val stdVolPath = standardizePath(path)
-                            if (stdVolPath.contains("self") || stdVolPath.contains("knox") || stdVolPath == "/storage/emulated") continue
-                            
-                            val name = if (volume.isPrimary) "Internal Storage" else volume.getDescription(this@MainActivity) ?: "SD Card"
-                            val count = allVideos.count { standardizePath(it.path).startsWith(stdVolPath) }
-                            val firstVideo = allVideos.find { standardizePath(it.path).startsWith(stdVolPath) }?.path ?: ""
-                            
-                            foldersInCurrentDir.add(FolderModel(name, stdVolPath, count.toString(), firstVideo))
-                        }
-                    }
-                } else {
-                    for (video in allVideos) {
-                        val relPath = getRelativePath(video.path, stdCurrentPath)
-                        if (relPath != null && relPath.isNotEmpty()) {
-                            val parts = relPath.split('/')
-                            if (parts.size > 1) {
-                                val subFolderName = parts[0]
-                                val subFolderPath = stdCurrentPath + "/" + subFolderName
-                                val subFolderNameLower = subFolderName.lowercase(Locale.ROOT)
-                                if (!processedSubFolders.contains(subFolderNameLower)) {
-                                    val count = allVideos.count { getRelativePath(it.path, subFolderPath) != null }
-                                    foldersInCurrentDir.add(FolderModel(subFolderName, subFolderPath, count.toString(), video.path))
-                                    processedSubFolders.add(subFolderNameLower)
-                                }
-                            } else if (parts.size == 1) {
-                                videosInCurrentDir.add(video)
-                            }
-                        }
-                    }
-
-                    if (foldersInCurrentDir.isEmpty() && videosInCurrentDir.isEmpty()) {
-                        val dir = File(stdCurrentPath)
-                        dir.listFiles()?.forEach { file ->
-                            if (file.isDirectory && !file.name.startsWith(".")) {
-                                foldersInCurrentDir.add(FolderModel(file.name, standardizePath(file.absolutePath), "0", ""))
-                            }
-                        }
-                    }
+                val directories = ScanDirectoryStore.getPaths(applicationContext)
+                val videos = withContext(Dispatchers.IO) {
+                    VideoRepository(applicationContext).getVideosFromDirectories(directories)
                 }
-                
-                foldersInCurrentDir.sortWith { o1, o2 -> naturalCompare(o1.folderName.lowercase(), o2.folderName.lowercase()) }
-                videosInCurrentDir.sortWith { o1, o2 -> naturalCompare(o1.title.lowercase(), o2.title.lowercase()) }
+                videoAdapter.submitList(videos)
+                val hasVideos = videos.isNotEmpty()
+                emptyMessage.text = if (hasVideos) "" else "所选目录中没有找到视频。"
+                emptyMessage.visibility = if (hasVideos) View.GONE else View.VISIBLE
+                recyclerView.visibility = if (hasVideos) View.VISIBLE else View.GONE
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                emptyMessage.text = "扫描视频失败：${error.message ?: "未知错误"}"
+                emptyMessage.visibility = View.VISIBLE
+                recyclerView.visibility = View.GONE
+                Toast.makeText(this@MainActivity, emptyMessage.text, Toast.LENGTH_LONG).show()
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
-                withContext(Dispatchers.Main) {
-                    updateToolbar()
-                    itemList.clear()
-                    itemList.addAll(foldersInCurrentDir)
-                    itemList.addAll(videosInCurrentDir)
+    private fun requestEncryptionToggle(
+        video: VideoFile,
+        encryptionType: VideoFile.EncryptionType
+    ) {
+        if (encryptionType == VideoFile.EncryptionType.LEGACY) {
+            Toast.makeText(this, "此旧格式加密文件暂不支持转换。", Toast.LENGTH_LONG).show()
+            return
+        }
+        val encrypting = encryptionType == VideoFile.EncryptionType.NONE
+        val action = if (encrypting) "加密" else "解密"
+        val retention = if (encrypting) "原始明文视频会保留。" else "原加密文件会保留。"
+        AlertDialog.Builder(this)
+            .setTitle("${action}视频")
+            .setMessage("将在源目录生成转换后的文件，不覆盖已有文件。$retention")
+            .setNegativeButton("取消", null)
+            .setPositiveButton(action) { _, _ -> convertVideo(video, encrypting) }
+            .show()
+    }
 
-                    if (::unifiedAdapter.isInitialized) {
-                        unifiedAdapter.notifyDataSetChanged()
+    private fun convertVideo(video: VideoFile, encrypting: Boolean) {
+        if (isConverting) return
+        isConverting = true
+        operationPanel.visibility = View.VISIBLE
+        operationText.text = "${if (encrypting) "正在加密" else "正在解密"}：${video.displayTitle}"
+        operationProgress.progress = 0
+
+        lifecycleScope.launch {
+            try {
+                val source = File(video.path)
+                val output = withContext(Dispatchers.IO) {
+                    val onProgress: (Int) -> Unit = { progress ->
+                        runOnUiThread {
+                            operationProgress.progress = progress
+                        }
+                    }
+                    if (encrypting) {
+                        VideoFileConverter.encrypt(applicationContext, source, onProgress)
                     } else {
-                        unifiedAdapter = UnifiedAdapter(this@MainActivity, itemList) { selectedFolder ->
-                            if (!isLoading) {
-                                currentPath = standardizePath(selectedFolder.path)
-                                loadContent()
-                            }
-                        }
-                        recyclerView.adapter = unifiedAdapter
+                        VideoFileConverter.decrypt(applicationContext, source, onProgress)
                     }
-                    isLoading = false
                 }
-            } catch (e: Exception) { 
-                withContext(Dispatchers.Main) { isLoading = false }
-                e.printStackTrace() 
+                MediaScannerConnection.scanFile(
+                    this@MainActivity,
+                    arrayOf(output.absolutePath),
+                    arrayOf(EncryptedMediaMimeType.fromExtension(output.extension)),
+                    null
+                )
+                Toast.makeText(this@MainActivity, "${actionName(encrypting)}完成：${output.name}", Toast.LENGTH_LONG).show()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "${actionName(encrypting)}失败：${error.message ?: "未知错误"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isConverting = false
+                operationPanel.visibility = View.GONE
+                if (hasPermission()) loadContent()
             }
         }
     }
 
-    private fun isVideoFile(file: File): Boolean {
-        val exts = setOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "3gp")
-        return exts.contains(file.extension.lowercase())
+    private fun actionName(encrypting: Boolean): String =
+        if (encrypting) "加密" else "解密"
+
+    private fun playVideo(video: VideoFile) {
+        val videos = ArrayList(videoAdapter.currentList)
+        val position = videos.indexOfFirst { it.path == video.path }
+        if (position < 0) return
+
+        getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("LAST_ID", video.id)
+            .putString("LAST_PATH", video.path)
+            .apply()
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
+            putExtra("VIDEO_LIST", videos)
+            putExtra("POSITION", position)
+        })
     }
 
-    private fun getRelativePath(videoPath: String, folderPath: String): String? {
-        val stdVideoPath = standardizePath(videoPath)
-        val stdFolderPath = standardizePath(folderPath)
-        val videoLower = stdVideoPath.lowercase(Locale.ROOT)
-        val folderLower = stdFolderPath.lowercase(Locale.ROOT)
-        if (videoLower.startsWith(folderLower + "/")) {
-            return stdVideoPath.substring(stdFolderPath.length + 1)
+    private fun updateResumeFab() {
+        val lastPath = getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+            .getString("LAST_PATH", "")
+        fabResume.visibility =
+            if (!lastPath.isNullOrEmpty() && File(lastPath).isFile) View.VISIBLE else View.GONE
+    }
+
+    private fun playLastWatched() {
+        val preferences = getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+        val lastPath = preferences.getString("LAST_PATH", "") ?: return
+        val lastFile = File(lastPath)
+        if (!lastFile.isFile) return
+
+        val videos = ArrayList(videoAdapter.currentList)
+        var position = videos.indexOfFirst { it.path == lastPath }
+        if (position < 0) {
+            videos.add(
+                VideoFile(
+                    id = preferences.getLong("LAST_ID", -1L),
+                    path = lastPath,
+                    title = lastFile.name,
+                    folderName = lastFile.parentFile?.name ?: "Unknown",
+                    size = lastFile.length(),
+                    duration = 0
+                )
+            )
+            position = videos.lastIndex
         }
-        return null
+        startActivity(Intent(this, PlayerActivity::class.java).apply {
+            putExtra("VIDEO_LIST", videos)
+            putExtra("POSITION", position)
+        })
     }
 
-    private fun getVolumePath(volume: Any): String? {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val getDirectory: Method = volume.javaClass.getMethod("getDirectory")
-                return (getDirectory.invoke(volume) as File).absolutePath
-            }
-            val getPath: Method = volume.javaClass.getMethod("getPath")
-            return getPath.invoke(volume) as String
-        } catch (e: Exception) { }
-        return null
-    }
-
-    private fun updateToolbar() {
-        val stdCurrentPath = standardizePath(currentPath ?: rootPath!!)
-        if (stdCurrentPath == rootPath) {
-            toolbarTitle.text = "Device Storage"
-            toolbar.navigationIcon = null
-        } else {
-            var name = File(stdCurrentPath).name
-            if (stdCurrentPath == standardizePath(Environment.getExternalStorageDirectory().absolutePath)) name = "Internal Storage"
-            toolbarTitle.text = name
-            toolbar.setNavigationIcon(R.drawable.ic_back)
-            toolbar.navigationIcon?.setTint(ContextCompat.getColor(this, android.R.color.white))
-            toolbar.setNavigationOnClickListener { onBackPressed() }
-        }
-    }
-
-    private fun naturalCompare(s1: String, s2: String): Int {
-        val n1 = s1.length; val n2 = s2.length
-        var i1 = 0; var i2 = 0
-        while (i1 < n1 && i2 < n2) {
-            val c1 = s1[i1]; val c2 = s2[i2]
-            if (Character.isDigit(c1) && Character.isDigit(c2)) {
-                var num1 = ""; while (i1 < n1 && Character.isDigit(s1[i1])) { num1 += s1[i1]; i1++ }
-                var num2 = ""; while (i2 < n2 && Character.isDigit(s2[i2])) { num2 += s2[i2]; i2++ }
-                val res = try { num1.toLong().compareTo(num2.toLong()) } catch (e: Exception) { 0 }
-                if (res != 0) return res
-            } else {
-                if (c1 != c2) return c1.compareTo(c2)
-                i1++; i2++
-            }
-        }
-        return n1 - n2
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) { onBackPressed(); return true }
-        return super.onOptionsItemSelected(item)
-    }
-
-    override fun onBackPressed() {
-        if (isLoading) return
-        val stdCurrentPath = standardizePath(currentPath ?: rootPath!!)
-        if (stdCurrentPath != rootPath) {
-            val storageManager = getSystemService(Context.STORAGE_SERVICE) as StorageManager
-            var isAtVolumeRoot = false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                for (volume in storageManager.storageVolumes) {
-                    if (stdCurrentPath == standardizePath(getVolumePath(volume) ?: "")) { isAtVolumeRoot = true; break }
-                }
-            }
-            if (isAtVolumeRoot) { currentPath = rootPath; loadContent(); return }
-            val parent = File(stdCurrentPath).parentFile
-            if (parent != null && parent.absolutePath != "/" && parent.absolutePath != "/storage") {
-                currentPath = standardizePath(parent.absolutePath)
-                loadContent()
-                return
-            }
-            currentPath = rootPath; loadContent(); return
-        }
-        super.onBackPressed()
+    companion object {
+        private const val REQUEST_STORAGE_PERMISSION = 101
+        private const val REQUEST_NOTIFICATION_PERMISSION = 103
     }
 }

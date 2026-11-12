@@ -23,7 +23,8 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.math.min
 
 internal object EncryptedMediaContainer {
-    const val FILE_EXTENSION = "mpv"
+    const val FILE_EXTENSION = "oxu"
+    const val LEGACY_FILE_EXTENSION = "mpv"
 
     private const val VERSION = 1
     private const val CHUNK_SIZE = 1024 * 1024
@@ -165,6 +166,37 @@ internal object EncryptedMediaContainer {
     }
 
     fun open(file: File, wrappingKey: SecretKey): Reader = Reader(file, wrappingKey)
+
+    fun decrypt(reader: Reader, outputFile: File, onProgress: (Int) -> Unit = {}) {
+        val parent = outputFile.absoluteFile.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Unable to create the output directory.")
+        }
+
+        try {
+            BufferedOutputStream(FileOutputStream(outputFile)).use { output ->
+                val buffer = ByteArray(CHUNK_SIZE)
+                try {
+                    var offset = 0L
+                    while (offset < reader.size) {
+                        val requestedSize = min(buffer.size.toLong(), reader.size - offset).toInt()
+                        val read = reader.readAt(offset, requestedSize, buffer)
+                        if (read != requestedSize) {
+                            throw EOFException("Encrypted media ended before its declared size.")
+                        }
+                        output.write(buffer, 0, read)
+                        offset += read
+                        onProgress((offset * 100 / reader.size).toInt())
+                    }
+                } finally {
+                    buffer.fill(0)
+                }
+            }
+        } catch (error: Exception) {
+            outputFile.delete()
+            throw error
+        }
+    }
 
     internal class Reader(file: File, wrappingKey: SecretKey) : AutoCloseable {
         private val raf = RandomAccessFile(file, "r")
