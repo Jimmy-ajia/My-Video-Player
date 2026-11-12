@@ -20,9 +20,11 @@ data class VideoFile(
     val formattedSize: String get() = formatSize(size)
     val displayTitle: String get() = if (title.isNotBlank() && title != "Unknown") title else path.substringAfterLast("/")
 
+    enum class EncryptionType { NONE, CURRENT, LEGACY }
+
     companion object {
-        private const val MARKER = "_HAMZA_SECURED_VIDEO_"
-        private const val SCAN_LIMIT = 1024 * 1024 * 50L // 50MB Scan limit for marker
+        private const val LEGACY_MARKER = "_HAMZA_SECURED_VIDEO_"
+        private const val LEGACY_SCAN_LIMIT = 15 * 1024 * 1024L
 
         fun formatDuration(durationMs: Long): String {
             if (durationMs <= 0) return "--:--"
@@ -39,63 +41,58 @@ data class VideoFile(
             return if (mb >= 1) String.format("%.1f MB", mb) else "${bytes / 1024} KB"
         }
 
-        data class SecurityStatus(val isSecured: Boolean, val signatureMatches: Boolean)
+        fun isFileEncrypted(context: Context, path: String): Boolean =
+            EncryptedMediaContainer.isContainer(File(path))
 
-        fun checkSecurityStatus(context: Context, path: String): SecurityStatus {
+        fun encryptionType(context: Context, path: String): EncryptionType = when {
+            isFileEncrypted(context, path) -> EncryptionType.CURRENT
+            isLegacyEncrypted(path) -> EncryptionType.LEGACY
+            else -> EncryptionType.NONE
+        }
+
+        fun isLegacyEncrypted(path: String): Boolean {
             val file = File(path)
-            if (!file.exists() || file.length() < 2000) return SecurityStatus(false, false)
-
-            val prefs = context.getSharedPreferences("SETTINGS", Context.MODE_PRIVATE)
-            val currentSignature = prefs.getString("SECURITY_SIGNATURE", "HAMZA") ?: "HAMZA"
-            val markerBytes = MARKER.toByteArray()
-            val sigBytes = currentSignature.toByteArray()
-
+            if (!file.isFile) return false
+            if (hasLegacyContainerFooter(file)) return true
+            val marker = LEGACY_MARKER.toByteArray(Charsets.US_ASCII)
             return try {
                 RandomAccessFile(file, "r").use { raf ->
-                    val bufferSize = 1024 * 1024 * 2 // 2MB buffer for faster scanning
-                    val buffer = ByteArray(bufferSize)
-                    var currentPos = 0L
-                    var foundMarker = false
-                    var signatureMatched = false
-
-                    while (currentPos < SCAN_LIMIT && currentPos < file.length()) {
-                        raf.seek(currentPos)
-                        val readCount = raf.read(buffer)
-                        if (readCount < markerBytes.size) break
-
-                        for (i in 0 .. (readCount - markerBytes.size)) {
-                            var match = true
-                            for (j in markerBytes.indices) {
-                                if (buffer[i + j] != markerBytes[j]) {
-                                    match = false
-                                    break
-                                }
-                            }
-
-                            if (match) {
-                                foundMarker = true
-                                val sigStartPos = currentPos + i + markerBytes.size
-                                raf.seek(sigStartPos)
-                                
-                                val actualSigInFile = ByteArray(sigBytes.size)
-                                val read = raf.read(actualSigInFile)
-                                if (read == sigBytes.size && actualSigInFile.contentEquals(sigBytes)) {
-                                    signatureMatched = true
-                                }
-                                break 
-                            }
+                    val buffer = ByteArray(1024 * 1024)
+                    var position = 0L
+                    while (position < LEGACY_SCAN_LIMIT && position < file.length()) {
+                        raf.seek(position)
+                        val read = raf.read(buffer)
+                        if (read < marker.size) return@use false
+                        for (index in 0..read - marker.size) {
+                            if (buffer.regionMatches(index, marker)) return@use true
                         }
-                        if (foundMarker) break
-                        currentPos += (bufferSize - markerBytes.size)
+
+                        position += read - marker.size + 1
                     }
-                    SecurityStatus(foundMarker, signatureMatched)
+                    false
                 }
-            } catch (e: Exception) {
-                SecurityStatus(false, false)
+            } catch (_: java.io.IOException) {
+                false
             }
         }
 
-        fun isFileSecured(context: Context, path: String): Boolean = checkSecurityStatus(context, path).isSecured
-        fun isFileEncrypted(context: Context, path: String): Boolean = checkSecurityStatus(context, path).signatureMatches
+        private fun hasLegacyContainerFooter(file: File): Boolean {
+            if (file.length() < 16) return false
+            return try {
+                RandomAccessFile(file, "r").use { raf ->
+                    raf.seek(file.length() - 16)
+                    val magic = ByteArray(8)
+                    raf.readFully(magic)
+                    magic.contentEquals("MVPEND01".toByteArray(Charsets.US_ASCII))
+                }
+            } catch (_: java.io.IOException) {
+                false
+            }
+        }
+
+        private fun ByteArray.regionMatches(offset: Int, expected: ByteArray): Boolean {
+            for (index in expected.indices) if (this[offset + index] != expected[index]) return false
+            return true
+        }
     }
 }

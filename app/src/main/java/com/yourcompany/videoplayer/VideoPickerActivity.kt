@@ -210,8 +210,6 @@ class VideoPickerActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             val item = items[position]
-            val settingsPrefs = context.getSharedPreferences("SETTINGS", Context.MODE_PRIVATE)
-            val currentSig = settingsPrefs.getString("SECURITY_SIGNATURE", "HAMZA") ?: "HAMZA"
 
             if (holder is FolderViewHolder && item is FolderModel) {
                 holder.name.text = item.folderName
@@ -231,7 +229,7 @@ class VideoPickerActivity : AppCompatActivity() {
                 holder.card.strokeColor = if (isSelected) Color.parseColor("#2196F3") else Color.parseColor("#1AFFFFFF")
                 holder.card.strokeWidth = if (isSelected) 4 else 1
 
-                // 🔥 Async Thumbnail Loading with Context for Dynamic Signature
+                // Load thumbnails asynchronously with an encryption-aware cache key.
                 holder.thumbJob?.cancel()
                 holder.thumbJob = adapterScope.launch {
                     val isEncrypted = encryptionCache[item.path] ?: withContext(Dispatchers.IO) {
@@ -240,7 +238,7 @@ class VideoPickerActivity : AppCompatActivity() {
                     encryptionCache[item.path] = isEncrypted
 
                     val thumbUri: Uri = if (isEncrypted) {
-                        Uri.parse("content://com.yourcompany.videoplayer.decryption${item.path}")
+                        EncryptedVideoUri.fromPath(item.path)
                     } else {
                         ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, item.id)
                     }
@@ -249,7 +247,7 @@ class VideoPickerActivity : AppCompatActivity() {
                     Glide.with(holder.itemView)
                         .asBitmap()
                         .load(thumbUri)
-                        .signature(ObjectKey("${item.path}_${currentSig}_$isEncrypted"))
+                        .signature(ObjectKey("${item.path}_${File(item.path).lastModified()}_$isEncrypted"))
                         .apply(
                             RequestOptions()
                                 .placeholder(R.drawable.ic_video)

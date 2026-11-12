@@ -82,9 +82,6 @@ class VideoAdapter(
         holder.duration.text = video.formattedDuration
         holder.size.text = video.formattedSize
 
-        val settingsPrefs = context.getSharedPreferences("SETTINGS", Context.MODE_PRIVATE)
-        val currentSig = settingsPrefs.getString("SECURITY_SIGNATURE", "HAMZA") ?: "HAMZA"
-
         holder.thumbJob?.cancel()
         holder.thumbJob = adapterScope.launch {
             val isEncrypted = withContext(Dispatchers.IO) { VideoFile.isFileEncrypted(context, video.path) }
@@ -93,7 +90,7 @@ class VideoAdapter(
             // Use MediaStore URI for normal videos so Glide can fetch the system-cached thumbnail.
             // File path often fails for HEVC 10-bit on many devices.
             val thumbSource: Any = if (isEncrypted) {
-                Uri.parse("content://com.yourcompany.videoplayer.decryption${video.path}")
+                EncryptedVideoUri.fromPath(video.path)
             } else {
                 ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video.id)
             }
@@ -101,7 +98,7 @@ class VideoAdapter(
             Glide.with(context)
                 .asBitmap()
                 .load(thumbSource)
-                .signature(ObjectKey("${video.path}_${currentSig}_$isEncrypted"))
+                .signature(ObjectKey("${video.path}_${File(video.path).lastModified()}_$isEncrypted"))
                 .apply(
                     RequestOptions()
                         .placeholder(R.drawable.ic_video)

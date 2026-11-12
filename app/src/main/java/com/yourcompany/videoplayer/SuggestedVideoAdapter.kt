@@ -45,8 +45,6 @@ class SuggestedVideoAdapter(
         holder.title.text = video.title
 
         val context = holder.itemView.context
-        val settingsPrefs = context.getSharedPreferences("SETTINGS", Context.MODE_PRIVATE)
-        val currentSig = settingsPrefs.getString("SECURITY_SIGNATURE", "HAMZA") ?: "HAMZA"
         
         // Watch Progress Logic
         val resumePrefs = context.getSharedPreferences("RESUME_INFO", Context.MODE_PRIVATE)
@@ -67,7 +65,7 @@ class SuggestedVideoAdapter(
         // 🔥 Fix for HEVC 10-bit Thumbnails in Suggested List:
         // Use MediaStore URI for normal videos to leverage system thumbnails.
         val thumbSource: Any = if (isEncrypted) {
-            Uri.parse("content://com.yourcompany.videoplayer.decryption${video.path}")
+            EncryptedVideoUri.fromPath(video.path)
         } else {
             ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video.id)
         }
@@ -75,7 +73,7 @@ class SuggestedVideoAdapter(
         Glide.with(holder.thumbnail)
             .asBitmap()
             .load(thumbSource)
-            .signature(ObjectKey("${video.path}_${currentSig}_$isEncrypted"))
+            .signature(ObjectKey("${video.path}_${File(video.path).lastModified()}_$isEncrypted"))
             .apply(
                 RequestOptions()
                     .placeholder(R.drawable.ic_video)

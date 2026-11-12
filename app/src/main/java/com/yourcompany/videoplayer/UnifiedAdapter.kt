@@ -51,10 +51,7 @@ class UnifiedAdapter(
         val playPrefs = context.getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
         val lastId = playPrefs.getLong("LAST_ID", -1L)
         val lastPath = playPrefs.getString("LAST_PATH", "") ?: ""
-        val settingsPrefs = context.getSharedPreferences("SETTINGS", Context.MODE_PRIVATE)
-        val alwaysVlc = settingsPrefs.getBoolean("ALWAYS_VLC", false)
         val durPrefs = context.getSharedPreferences("SECURE_DUR", Context.MODE_PRIVATE)
-        val currentSig = settingsPrefs.getString("SECURITY_SIGNATURE", "HAMZA") ?: "HAMZA"
 
         if (holder is FolderViewHolder && item is FolderModel) {
             holder.folderName.text = item.folderName
@@ -118,7 +115,7 @@ class UnifiedAdapter(
                     }
                 }
                 
-                loadThumbnail(holder, item, encrypted, currentSig)
+                loadThumbnail(holder, item, encrypted)
             }
 
             holder.itemView.setOnClickListener {
@@ -146,10 +143,10 @@ class UnifiedAdapter(
         }
     }
 
-    private fun loadThumbnail(holder: VideoViewHolder, item: VideoFile, isEncrypted: Boolean, signature: String) {
+    private fun loadThumbnail(holder: VideoViewHolder, item: VideoFile, isEncrypted: Boolean) {
         // 🔥 Fix: Use File source instead of MediaStore ID for more reliable thumbnails on manual scans
         val thumbSource: Any = if (isEncrypted) {
-            Uri.parse("content://com.yourcompany.videoplayer.decryption${item.path}")
+            EncryptedVideoUri.fromPath(item.path)
         } else {
             File(item.path)
         }
@@ -157,7 +154,7 @@ class UnifiedAdapter(
         Glide.with(context)
             .asBitmap()
             .load(thumbSource)
-            .signature(ObjectKey("${item.path}_${signature}_$isEncrypted"))
+            .signature(ObjectKey("${item.path}_${File(item.path).lastModified()}_$isEncrypted"))
             .apply(RequestOptions()
                 .placeholder(R.drawable.ic_video)
                 .error(R.drawable.ic_video)
@@ -170,7 +167,7 @@ class UnifiedAdapter(
     private fun getRealDuration(path: String): Long {
         val retriever = MediaMetadataRetriever()
         return try {
-            val uri = Uri.parse("content://com.yourcompany.videoplayer.decryption$path")
+            val uri = EncryptedVideoUri.fromPath(path)
             retriever.setDataSource(context, uri)
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
         } catch (e: Exception) { 0L }

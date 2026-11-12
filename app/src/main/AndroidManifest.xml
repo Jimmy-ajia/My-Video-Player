@@ -96,6 +96,12 @@
             
         </activity>
 
+        <activity
+            android:name=".VlcFallbackActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden" />
+
         <service
             android:name=".PlaybackService"
             android:exported="true"

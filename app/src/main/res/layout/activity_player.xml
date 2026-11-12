@@ -22,12 +22,6 @@
         android:layout_gravity="bottom"
         android:paddingBottom="100dp" />
 
-    <org.videolan.libvlc.util.VLCVideoLayout
-        android:id="@+id/vlc_video_layout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
     <View
         android:id="@+id/controls_bg_overlay"
         android:layout_width="match_parent"
@@ -356,21 +350,21 @@
         android:elevation="50dp"
         android:padding="30dp">
         <ImageView android:layout_width="75dp" android:layout_height="75dp" android:src="@android:drawable/ic_dialog_alert" app:tint="#FFD700" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Hamza's Mode Required" android:textColor="#FFD700" android:textSize="22sp" android:textStyle="bold" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center" android:text="This format or encrypted file requires Hamza's Mode.\nPlease enable it in:\nSettings -> Player Settings -> Hamza's Mode" android:textColor="@android:color/white" android:textSize="15sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Playback unavailable" android:textColor="#FFD700" android:textSize="22sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center" android:text="This file uses a legacy encryption format or is not supported by the available players." android:textColor="@android:color/white" android:textSize="15sp" />
         <Button
-            android:id="@+id/btn_goto_settings"
+            android:id="@+id/btn_close_error"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="Go to Settings"
+            android:text="Go Back"
             android:textAllCaps="false"
             android:backgroundTint="#FFD700"
             android:textColor="#000000" />
     </LinearLayout>
 
     <LinearLayout
-        android:id="@+id/signature_mismatch_overlay"
+        android:id="@+id/encrypted_error_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
@@ -380,10 +374,10 @@
         android:elevation="50dp"
         android:padding="30dp">
         <ImageView android:layout_width="80dp" android:layout_height="80dp" android:src="@android:drawable/ic_lock_lock" app:tint="#FF5252" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Security Signature Mismatch!" android:textColor="#FF5252" android:textSize="22sp" android:textStyle="bold" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center" android:text="This video is encrypted with a different signature.\nPlease check your settings." android:textColor="@android:color/white" android:textSize="14sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Encrypted video unavailable" android:textColor="#FF5252" android:textSize="22sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center" android:text="The encrypted media container is invalid or a data chunk failed authentication." android:textColor="@android:color/white" android:textSize="14sp" />
         <Button
-            android:id="@+id/btn_close_mismatch"
+            android:id="@+id/btn_close_encrypted_error"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"

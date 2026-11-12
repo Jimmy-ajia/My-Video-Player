@@ -110,7 +110,13 @@ class VideoRepository(val context: Context) {
         var duration = 0L
         val retriever = MediaMetadataRetriever()
         try {
-            retriever.setDataSource(path)
+            if (EncryptedMediaContainer.isContainer(File(path))) {
+                context.contentResolver.openFileDescriptor(EncryptedVideoUri.fromPath(path), "r")?.use {
+                    retriever.setDataSource(it.fileDescriptor)
+                }
+            } else {
+                retriever.setDataSource(path)
+            }
             val time = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             duration = time?.toLong() ?: 0L
         } catch (e: Exception) {
@@ -123,7 +129,26 @@ class VideoRepository(val context: Context) {
 
     private fun scanManualRecursive(dir: File, list: MutableList<VideoFile>, foundPaths: MutableSet<String>, depth: Int) {
         if (!dir.exists() || !dir.isDirectory || depth > 2) return 
-        val videoExtensions = setOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "3gp")
+        val videoExtensions = setOf(
+            "mp4",
+            "m4v",
+            EncryptedMediaContainer.FILE_EXTENSION,
+            "mkv",
+            "webm",
+            "avi",
+            "mov",
+            "wmv",
+            "flv",
+            "3gp",
+            "3g2",
+            "ts",
+            "mts",
+            "m2ts",
+            "mpg",
+            "mpeg",
+            "vob",
+            "asf"
+        )
         try {
             dir.listFiles()?.forEach { file ->
                 val stdPath = standardizePath(file.absolutePath)

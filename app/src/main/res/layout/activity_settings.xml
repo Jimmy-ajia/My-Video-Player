@@ -26,7 +26,6 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Dynamic Signature Section -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -44,7 +43,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Security Signature"
+                        android:text="Encryption key"
                         android:textColor="@color/white"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -52,86 +51,10 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Only videos with this signature will be decrypted"
+                        android:text="This version uses an app-built-in key. It is temporary and can be extracted from the app; server-issued keys are planned for a later version."
                         android:textColor="#AAAAAA"
                         android:textSize="12sp"
-                        android:layout_marginBottom="12dp" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="Custom Signature (Default: HAMZA)"
-                        app:hintTextColor="@color/accent"
-                        app:boxStrokeColor="@color/accent"
-                        android:textColorHint="#888888"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_custom_signature"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:textColor="@color/white"
-                            android:inputType="text"
-                            android:maxLines="1" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                    
-                    <Button
-                        android:id="@+id/btn_save_signature"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Save and Update"
-                        android:layout_gravity="end"
-                        android:layout_marginTop="8dp"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:textColor="@color/accent" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- VLC Mode Section -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/surface_dark"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="4dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="16dp"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Hamza's Mode"
-                            android:textColor="@color/white"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="PlayBack Mode for all Types of Video and Extention"
-                            android:textColor="#AAAAAA"
-                            android:textSize="12sp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switch_vlc_mode_settings"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:useMaterialThemeColors="true"
-                        app:thumbTint="@color/accent"
-                        app:trackTint="@color/white" />
+                        android:layout_marginBottom="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -176,7 +99,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Use current signature to secure videos"
+                            android:text="Encrypt MP4 samples and index into the private container format"
                             android:textColor="#AAAAAA"
                             android:textSize="12sp" />
                     </LinearLayout>
