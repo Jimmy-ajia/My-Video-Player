@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#2196F3</color>
-    <color name="primary_dark">#1976D2</color>
-    <color name="accent">#00BCD4</color>
-    
-    <color name="background_dark">#121212</color>
-    <color name="surface_dark">#1E1E1E</color>
-    
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#B0BEC5</color>
-    
+    <color name="screen_background">#F4F7FA</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="text_primary">#17212B</color>
+    <color name="text_secondary">#526170</color>
+    <color name="color_primary">#1565C0</color>
+    <color name="color_primary_variant">#0D47A1</color>
+    <color name="color_on_primary">#FFFFFFFF</color>
+    <color name="color_accent">#007C91</color>
+    <color name="color_on_accent">#FFFFFFFF</color>
+    <color name="color_outline">#D5DEE7</color>
+    <color name="selection_surface">#E3F2FD</color>
+    <color name="selection_overlay">#663D91D8</color>
+    <color name="color_error">#B3261E</color>
+    <color name="dialog_scrim">#66000000</color>
+    <color name="icon_primary">@color/text_primary</color>
+    <color name="progress_track">#FFD5DEE7</color>
+
+    <color name="player_control_foreground">#FFFFFFFF</color>
+    <color name="player_progress_track">#80FFFFFF</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

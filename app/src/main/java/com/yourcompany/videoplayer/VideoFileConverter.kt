@@ -53,6 +53,18 @@ internal object VideoFileConverter {
         }
     }
 
+    fun existingPlaintextFor(context: Context, source: File): File? {
+        val reader = LocalMediaKeyStore.openEncryptedMedia(context, source)
+        reader.use {
+            val expected = expectedPlaintextFor(source, reader.originalExtension)
+            return expected.takeIf {
+                it.isFile &&
+                    !EncryptedMediaContainer.isContainer(it) &&
+                    !VideoFile.isLegacyEncrypted(it.absolutePath)
+            }
+        }
+    }
+
     internal fun encryptedOutputFor(source: File): File =
         uniqueSibling(
             source,
@@ -62,10 +74,19 @@ internal object VideoFileConverter {
         )
 
     internal fun decryptedOutputFor(source: File, originalExtension: String): File {
-        val baseName = source.nameWithoutExtension.removeSuffixIgnoreCase("_encrypted")
-            .ifBlank { source.nameWithoutExtension }
+        val baseName = decryptedBaseName(source)
         return uniqueSibling(source, baseName, originalExtension, "${baseName}_decrypted")
     }
+
+    internal fun expectedPlaintextFor(source: File, originalExtension: String): File {
+        val parent = source.absoluteFile.parentFile
+            ?: throw IOException("The source video has no parent directory.")
+        return File(parent, "${decryptedBaseName(source)}.${originalExtension.trimStart('.')}")
+    }
+
+    private fun decryptedBaseName(source: File): String =
+        source.nameWithoutExtension.removeSuffixIgnoreCase("_encrypted")
+            .ifBlank { source.nameWithoutExtension }
 
     private fun uniqueSibling(
         source: File,

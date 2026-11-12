@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +18,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
@@ -225,8 +225,16 @@ class VideoPickerActivity : AppCompatActivity() {
                 val isSelected = selectedPaths.contains(item.path)
                 holder.overlay.visibility = if (isSelected) View.VISIBLE else View.GONE
                 holder.tick.visibility = if (isSelected) View.VISIBLE else View.GONE
-                holder.card.setCardBackgroundColor(if (isSelected) Color.parseColor("#332196F3") else Color.parseColor("#1E1E1E"))
-                holder.card.strokeColor = if (isSelected) Color.parseColor("#2196F3") else Color.parseColor("#1AFFFFFF")
+                holder.card.setCardBackgroundColor(
+                    ContextCompat.getColor(
+                        context,
+                        if (isSelected) R.color.selection_surface else R.color.surface
+                    )
+                )
+                holder.card.strokeColor = ContextCompat.getColor(
+                    context,
+                    if (isSelected) R.color.color_primary else R.color.color_outline
+                )
                 holder.card.strokeWidth = if (isSelected) 4 else 1
 
                 // Load thumbnails asynchronously with an encryption-aware cache key.

@@ -7,5 +7,5 @@
         android:icon="@drawable/ic_edit"
         android:visible="false"
         app:showAsAction="always"
-        app:iconTint="@color/accent" />
+        app:iconTint="@color/color_primary" />
 </menu>

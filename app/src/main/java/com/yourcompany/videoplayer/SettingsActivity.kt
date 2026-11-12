@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.Dispatchers
@@ -302,7 +303,7 @@ class SettingsActivity : AppCompatActivity() {
         if (paths.isEmpty()) {
             container.addView(TextView(this).apply {
                 text = "尚未添加扫描目录。"
-                setTextColor(0xFFAAAAAA.toInt())
+                setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_secondary))
                 textSize = 13f
             })
             return
@@ -323,7 +324,7 @@ class SettingsActivity : AppCompatActivity() {
             }
             val label = TextView(this).apply {
                 text = "${directory.name}${if (isPreset) "（预设）" else ""}\n$path"
-                setTextColor(0xFFFFFFFF.toInt())
+                setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_primary))
                 textSize = 13f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.MIDDLE

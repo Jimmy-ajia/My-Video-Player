@@ -5,7 +5,6 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -15,6 +14,7 @@ import android.view.ViewGroup
 import android.view.animation.AnimationUtils
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -72,10 +72,10 @@ class VideoAdapter(
         val lastId = playPrefs.getLong("LAST_ID", -1L)
 
         if (video.id == lastId) {
-            holder.title.setTextColor(Color.parseColor("#FF5252"))
+            holder.title.setTextColor(ContextCompat.getColor(context, R.color.color_primary))
             holder.title.text = "▶ ${video.displayTitle}"
         } else {
-            holder.title.setTextColor(Color.WHITE)
+            holder.title.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
             holder.title.text = video.displayTitle
         }
 
@@ -140,7 +140,7 @@ class VideoAdapter(
 
     private fun showRenameDialog(video: VideoFile) {
         val et = EditText(context)
-        et.setTextColor(Color.BLACK)
+        et.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
         et.setText(video.title.substringBeforeLast("."))
         val container = FrameLayout(context)
         val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -148,7 +148,7 @@ class VideoAdapter(
         et.layoutParams = params
         container.addView(et)
 
-        AlertDialog.Builder(context, R.style.WhiteDialog)
+        AlertDialog.Builder(context, R.style.CustomDialog)
             .setTitle("Rename Video")
             .setView(container)
             .setPositiveButton("OK") { _, _ ->
@@ -185,7 +185,7 @@ class VideoAdapter(
 
     private fun deleteVideoRequest(video: VideoFile) {
         val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video.id)
-        AlertDialog.Builder(context, R.style.WhiteDialog)
+        AlertDialog.Builder(context, R.style.CustomDialog)
             .setTitle("Delete Video")
             .setMessage("Are you sure you want to delete this video?")
             .setPositiveButton("Delete") { _, _ ->

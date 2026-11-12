@@ -741,7 +741,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun adjustBrightness(deltaP: Float) { gestureContainer.visibility = View.VISIBLE; gestureIcon.setImageResource(R.drawable.ic_brightness); brightnessBar.visibility = View.VISIBLE; volumeBar.visibility = View.GONE; val lp = window.attributes; if (lp.screenBrightness < 0) lp.screenBrightness = 0.5f; lp.screenBrightness = (lp.screenBrightness + deltaP).coerceIn(0.01f, 1.0f); window.attributes = lp; brightnessBar.progress = (lp.screenBrightness * 100).toInt(); gestureText.text = "${brightnessBar.progress}%" }
     private fun cycleRotationMode() { rotationMode = (rotationMode + 1) % 3; when (rotationMode) { 0 -> { requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR; showToast("Auto") }; 1 -> { requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE; showToast("Landscape") }; 2 -> { requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT; showToast("Portrait") } } }
     private fun showToast(m: String) { Toast.makeText(this, m, Toast.LENGTH_SHORT).apply { setGravity(Gravity.CENTER, 0, 0); show() } }
-    private fun showSpeedDialog() { val s = arrayOf("0.25x", "0.5x", "0.75x", "Normal", "1.25x", "1.5x", "1.75x", "2.0x"); val v = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f); AlertDialog.Builder(this, R.style.WhiteDialog).setTitle("Playback Speed").setItems(s) { _: DialogInterface, w: Int -> controller?.setPlaybackSpeed(v[w]); resetTimer() }.show() }
+    private fun showSpeedDialog() { val s = arrayOf("0.25x", "0.5x", "0.75x", "Normal", "1.25x", "1.5x", "1.75x", "2.0x"); val v = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f); AlertDialog.Builder(this, R.style.CustomDialog).setTitle("Playback Speed").setItems(s) { _: DialogInterface, w: Int -> controller?.setPlaybackSpeed(v[w]); resetTimer() }.show() }
     private fun showAudioDialog() {
         val tracks = controller?.currentTracks ?: return
         val labels = mutableListOf<String>()
@@ -754,7 +754,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         if (labels.isEmpty()) return
-        AlertDialog.Builder(this, R.style.WhiteDialog)
+        AlertDialog.Builder(this, R.style.CustomDialog)
             .setTitle("Select Audio")
             .setItems(labels.toTypedArray()) { _: DialogInterface, index: Int ->
                 val (group, trackIndex) = trackGroups[index]
@@ -774,7 +774,7 @@ class PlayerActivity : AppCompatActivity() {
                 trackGroups.add(group to index)
             }
         }
-        AlertDialog.Builder(this, R.style.WhiteDialog)
+        AlertDialog.Builder(this, R.style.CustomDialog)
             .setTitle("Subtitles")
             .setItems(labels.toTypedArray()) { _: DialogInterface, index: Int ->
                 val parameters = controller?.trackSelectionParameters?.buildUpon() ?: return@setItems

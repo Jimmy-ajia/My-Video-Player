@@ -4,8 +4,10 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
+import java.io.IOException
 import java.util.ArrayList
 
 class VideoRepository(val context: Context) {
@@ -20,26 +22,46 @@ class VideoRepository(val context: Context) {
     }
 
     fun getVideosFromDirectories(directoryPaths: List<String>): ArrayList<VideoFile> {
-        val roots = directoryPaths
-            .map { File(it).canonicalFile }
-            .filter { it.isDirectory }
+        val videos = scanDirectories(directoryPaths).videos.sortedWith { left, right ->
+            naturalCompare(left.title.lowercase(), right.title.lowercase())
+        }
+        return ArrayList(videos)
+    }
+
+    internal fun scanDirectories(directoryPaths: List<String>): VideoScanResult {
+        val configuredRoots = directoryPaths.map { File(it).canonicalPath }.distinct()
+        val roots = configuredRoots.map(::File).filter { it.isDirectory }
+        val scannedRoots = configuredRoots.filter(::isOnMountedVolume)
         val list = ArrayList<VideoFile>()
         val foundPaths = mutableSetOf<String>()
-        if (roots.isEmpty()) return list
 
-        getVideosFromFolder(extractMissingDuration = false).forEach { video ->
-            val videoFile = File(video.path).canonicalFile
-            if (roots.any { root -> videoFile.toPath().startsWith(root.toPath()) }) {
-                list.add(video)
-                foundPaths.add(videoFile.path)
+        if (roots.isNotEmpty()) {
+            getVideosFromFolder(extractMissingDuration = false).forEach { video ->
+                val videoFile = File(video.path).canonicalFile
+                if (videoFile.isFile &&
+                    roots.any { root -> videoFile.toPath().startsWith(root.toPath()) }
+                ) {
+                    list.add(video)
+                    foundPaths.add(videoFile.path)
+                }
+            }
+
+            roots.forEach { root ->
+                scanManualRecursive(
+                    root,
+                    list,
+                    foundPaths,
+                    0,
+                    extractDuration = false,
+                    failOnError = true
+                )
             }
         }
 
-        roots.forEach { root ->
-            scanManualRecursive(root, list, foundPaths, 0, extractDuration = false)
-        }
-        list.sortWith { left, right -> naturalCompare(left.title.lowercase(), right.title.lowercase()) }
-        return list
+        val uniqueVideos = list
+            .map { video -> video.copy(path = File(video.path).canonicalPath) }
+            .distinctBy(VideoFile::path)
+        return VideoScanResult(uniqueVideos, configuredRoots, scannedRoots)
     }
 
     fun getVideosFromFolder(
@@ -158,9 +180,14 @@ class VideoRepository(val context: Context) {
         list: MutableList<VideoFile>,
         foundPaths: MutableSet<String>,
         depth: Int,
-        extractDuration: Boolean = true
+        extractDuration: Boolean = true,
+        failOnError: Boolean = false
     ) {
-        if (!dir.exists() || !dir.isDirectory || depth > 20) return
+        if (!dir.exists() || !dir.isDirectory) return
+        if (depth > MAX_SCAN_DEPTH) {
+            if (failOnError) throw IOException("扫描目录层级过深：${dir.absolutePath}")
+            return
+        }
         val videoExtensions = setOf(
             "mp4",
             "m4v",
@@ -183,11 +210,25 @@ class VideoRepository(val context: Context) {
             "asf"
         )
         try {
-            dir.listFiles()?.forEach { file ->
+            val files = dir.listFiles()
+            if (files == null) {
+                if (failOnError && dir.exists()) {
+                    throw IOException("无法读取扫描目录：${dir.absolutePath}")
+                }
+                return
+            }
+            files.forEach { file ->
                 val stdPath = standardizePath(file.absolutePath)
                 if (file.isDirectory) {
                     if (!file.name.startsWith(".")) {
-                        scanManualRecursive(file, list, foundPaths, depth + 1, extractDuration)
+                        scanManualRecursive(
+                            file,
+                            list,
+                            foundPaths,
+                            depth + 1,
+                            extractDuration,
+                            failOnError
+                        )
                     }
                 } else if (file.isFile && videoExtensions.contains(file.extension.lowercase())) {
                     if (!foundPaths.contains(stdPath)) {
@@ -204,7 +245,29 @@ class VideoRepository(val context: Context) {
                     }
                 }
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) {
+            if (failOnError) throw IOException("扫描目录失败：${dir.absolutePath}", e)
+        }
+    }
+
+    private fun isOnMountedVolume(path: String): Boolean {
+        val directory = File(path).canonicalFile
+        if (directory.isDirectory) return true
+
+        val primaryRoot = Environment.getExternalStorageDirectory().canonicalFile
+        if (directory.toPath().startsWith(primaryRoot.toPath())) {
+            return primaryRoot.isDirectory
+        }
+
+        val storageRoot = File("/storage").canonicalFile
+        if (!directory.toPath().startsWith(storageRoot.toPath())) return false
+        val relativePath = storageRoot.toPath().relativize(directory.toPath())
+        if (relativePath.nameCount == 0) return storageRoot.isDirectory
+        return File(storageRoot, relativePath.getName(0).toString()).isDirectory
+    }
+
+    private companion object {
+        const val MAX_SCAN_DEPTH = 64
     }
 
     private fun naturalCompare(s1: String, s2: String): Int {

@@ -1,19 +1,20 @@
 package com.yourcompany.videoplayer
 
 import android.content.Context
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
+import androidx.core.content.ContextCompat
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.signature.ObjectKey
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,21 +34,27 @@ internal class MainVideoAdapter(
 
     private val adapterScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val encryptionCache = ConcurrentHashMap<String, CachedEncryptionState>()
+    private var recentPath = context.getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+        .getString("LAST_PATH", "")
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VideoHolder =
         VideoHolder(
             LayoutInflater.from(parent.context).inflate(R.layout.item_main_video, parent, false)
         )
 
+    override fun onBindViewHolder(holder: VideoHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains(HIGHLIGHT_PAYLOAD)) {
+            bindRecentHighlight(holder, getItem(position))
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
+
     override fun onBindViewHolder(holder: VideoHolder, position: Int) {
         val video = getItem(position)
         holder.boundPath = video.path
         holder.title.text = video.displayTitle
-        holder.title.setTextColor(
-            if (context.getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
-                    .getString("LAST_PATH", "") == video.path
-            ) Color.parseColor("#FFFF5252") else Color.WHITE
-        )
+        bindRecentHighlight(holder, video)
         holder.thumbnail.setImageResource(R.drawable.ic_video)
         holder.encryptionState.text = "检查加密状态…"
         holder.encryptionToggle.isEnabled = false
@@ -122,6 +129,36 @@ internal class MainVideoAdapter(
         }
     }
 
+    fun refreshRecentPlaybackHighlight() {
+        val updatedPath = context.getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+            .getString("LAST_PATH", "")
+        if (updatedPath == recentPath) return
+
+        val oldPath = recentPath
+        recentPath = updatedPath
+        listOf(oldPath, updatedPath).forEach { path ->
+            val position = currentList.indexOfFirst { it.path == path }
+            if (position >= 0) notifyItemChanged(position, HIGHLIGHT_PAYLOAD)
+        }
+    }
+
+    private fun bindRecentHighlight(holder: VideoHolder, video: VideoFile) {
+        val isRecent = video.path == recentPath
+        val density = holder.itemView.resources.displayMetrics.density
+        val context = holder.itemView.context
+        holder.card.strokeColor = ContextCompat.getColor(
+            context,
+            if (isRecent) R.color.color_primary else R.color.color_outline
+        )
+        holder.card.strokeWidth = (if (isRecent) 2 * density else density).toInt()
+        holder.title.setTextColor(
+            ContextCompat.getColor(
+                context,
+                if (isRecent) R.color.color_primary else R.color.text_primary
+            )
+        )
+    }
+
     override fun onViewRecycled(holder: VideoHolder) {
         holder.bindJob?.cancel()
         Glide.with(holder.thumbnail).clear(holder.thumbnail)
@@ -135,6 +172,7 @@ internal class MainVideoAdapter(
     }
 
     class VideoHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val card: MaterialCardView = view.findViewById(R.id.main_video_card)
         val thumbnail: ShapeableImageView = view.findViewById(R.id.main_video_thumbnail)
         val title: TextView = view.findViewById(R.id.main_video_title)
         val encryptionState: TextView = view.findViewById(R.id.main_video_encryption_state)
@@ -145,6 +183,8 @@ internal class MainVideoAdapter(
     }
 
     companion object {
+        private const val HIGHLIGHT_PAYLOAD = "recent_playback_highlight"
+
         private data class CachedEncryptionState(
             val modified: Long,
             val size: Long,

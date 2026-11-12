@@ -8,8 +8,8 @@
     android:layout_marginVertical="9dp"
     app:cardCornerRadius="15dp"
     app:cardElevation="6dp"
-    app:cardBackgroundColor="#1A1A1A"
-    app:strokeColor="#26FFFFFF"
+    app:cardBackgroundColor="@color/surface"
+    app:strokeColor="@color/color_outline"
     app:strokeWidth="1dp">
 
     <RelativeLayout

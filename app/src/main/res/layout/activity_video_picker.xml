@@ -4,16 +4,16 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background_dark"
+    android:background="@color/screen_background"
     android:fitsSystemWindows="true">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar_picker"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/surface_dark"
+        android:background="@color/surface"
         app:title="Select Video"
-        app:titleTextColor="@color/white"
+        app:titleTextColor="@color/text_primary"
         app:navigationIcon="@drawable/ic_back" />
 
     <androidx.recyclerview.widget.RecyclerView

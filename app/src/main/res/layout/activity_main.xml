@@ -4,7 +4,7 @@
     android:id="@+id/main_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background_dark"
+    android:background="@color/screen_background"
     android:fitsSystemWindows="true">
 
     <LinearLayout
@@ -16,9 +16,9 @@
             android:id="@+id/toolbar_main"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/surface_dark"
-            app:titleTextColor="@color/white"
-            app:navigationIconTint="@android:color/white"
+            android:background="@color/surface"
+            app:titleTextColor="@color/text_primary"
+            app:navigationIconTint="@color/text_primary"
             android:elevation="4dp">
 
             <RelativeLayout
@@ -31,10 +31,23 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Videos"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:layout_centerVertical="true" />
+
+                <ImageView
+                    android:id="@+id/btn_sort"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_centerVertical="true"
+                    android:layout_toStartOf="@id/btn_settings"
+                    android:layout_marginEnd="12dp"
+                    android:padding="4dp"
+                    android:src="@drawable/ic_sort"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    app:tint="@color/text_primary"
+                    android:contentDescription="Sort videos" />
 
                 <ImageView
                     android:id="@+id/btn_settings"
@@ -45,7 +58,7 @@
                     android:padding="4dp"
                     android:src="@drawable/ic_settings"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    app:tint="@android:color/white"
+                    app:tint="@color/text_primary"
                     android:contentDescription="Settings" />
             </RelativeLayout>
         </androidx.appcompat.widget.Toolbar>
@@ -54,7 +67,7 @@
             android:id="@+id/video_operation_panel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/surface_dark"
+            android:background="@color/surface"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
             android:paddingVertical="8dp"
@@ -66,7 +79,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="13sp" />
 
             <ProgressBar
@@ -100,19 +113,5 @@
             android:paddingVertical="4dp" />
 
     </LinearLayout>
-
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/fab_last_played"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:text="Resume"
-        android:textColor="@color/white"
-        app:icon="@drawable/ic_play_arrow"
-        app:iconTint="@color/white"
-        app:backgroundTint="#FF5252"
-        app:rippleColor="#4DFFFFFF"
-        android:visibility="gone" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

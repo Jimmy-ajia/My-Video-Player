@@ -23,8 +23,10 @@ class VideoFileConverterTest {
             assertEquals("clip_encrypted_1.oxu", nextEncrypted.name)
 
             val decrypted = VideoFileConverter.decryptedOutputFor(encrypted, "mp4")
+            val expectedPlaintext = VideoFileConverter.expectedPlaintextFor(encrypted, "mp4")
             assertEquals(directory.canonicalFile, decrypted.parentFile?.canonicalFile)
             assertEquals("clip_decrypted.mp4", decrypted.name)
+            assertEquals(source.canonicalFile, expectedPlaintext.canonicalFile)
             assertTrue(source.isFile)
             assertTrue(encrypted.isFile)
         } finally {

@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
@@ -13,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -59,10 +59,10 @@ class UnifiedAdapter(
             holder.folderIcon.setImageResource(R.drawable.ios_folder)
             
             if (lastPath.startsWith(item.path)) {
-                holder.folderName.setTextColor(Color.parseColor("#FF5252"))
-                holder.folderIcon.setColorFilter(Color.parseColor("#FF5252"))
+                holder.folderName.setTextColor(ContextCompat.getColor(context, R.color.color_primary))
+                holder.folderIcon.setColorFilter(ContextCompat.getColor(context, R.color.color_primary))
             } else {
-                holder.folderName.setTextColor(Color.WHITE)
+                holder.folderName.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
                 holder.folderIcon.clearColorFilter()
             }
             holder.itemView.setOnClickListener { onFolderClick(item) }
@@ -71,9 +71,9 @@ class UnifiedAdapter(
             holder.videoSize.text = item.formattedSize
             
             if (item.path == lastPath || item.id == lastId) {
-                holder.videoTitle.setTextColor(Color.parseColor("#FF5252"))
+                holder.videoTitle.setTextColor(ContextCompat.getColor(context, R.color.color_primary))
             } else {
-                holder.videoTitle.setTextColor(Color.WHITE)
+                holder.videoTitle.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
             }
 
             // Duration Logic
@@ -176,7 +176,7 @@ class UnifiedAdapter(
 
     private fun showRenameDialog(video: VideoFile) {
         val et = EditText(context)
-        et.setTextColor(Color.BLACK)
+        et.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
         et.setText(video.title.substringBeforeLast("."))
         val container = FrameLayout(context)
         val params = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -184,7 +184,7 @@ class UnifiedAdapter(
         et.layoutParams = params
         container.addView(et)
 
-        AlertDialog.Builder(context, R.style.WhiteDialog)
+        AlertDialog.Builder(context, R.style.CustomDialog)
             .setTitle("Rename Video")
             .setView(container)
             .setPositiveButton("OK") { _, _ ->
@@ -202,7 +202,7 @@ class UnifiedAdapter(
 
     private fun deleteVideoRequest(video: VideoFile) {
         val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video.id)
-        AlertDialog.Builder(context, R.style.WhiteDialog)
+        AlertDialog.Builder(context, R.style.CustomDialog)
             .setTitle("Delete Video")
             .setMessage("Are you sure you want to delete this video?")
             .setPositiveButton("Delete") { _, _ ->

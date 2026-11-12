@@ -3,16 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background_dark"
+    android:background="@color/screen_background"
     android:fitsSystemWindows="true">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar_settings"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/surface_dark"
+        android:background="@color/surface"
         app:title="Settings"
-        app:titleTextColor="@color/white"
+        app:titleTextColor="@color/text_primary"
         app:navigationIcon="@drawable/ic_back" />
 
     <ScrollView
@@ -30,7 +30,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/surface_dark"
+            app:cardBackgroundColor="@color/surface"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp">
 
@@ -44,7 +44,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="扫描目录"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
@@ -53,7 +53,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="启动及返回主页时扫描所列目录。预设目录可移除，也可通过系统选择器添加共享存储或 SD 卡目录。"
-                    android:textColor="#AAAAAA"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
                 <LinearLayout
@@ -76,7 +76,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/surface_dark"
+                app:cardBackgroundColor="@color/surface"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="4dp">
 
@@ -90,7 +90,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Recovery key"
-                        android:textColor="@color/white"
+                        android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -98,7 +98,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Export a password-protected recovery file before uninstalling. After reinstall, import it before encrypting new videos. Older files use a non-exportable key and cannot be restored."
-                        android:textColor="#AAAAAA"
+                        android:textColor="@color/text_secondary"
                         android:textSize="12sp"
                         android:layout_marginBottom="4dp" />
 
@@ -130,7 +130,7 @@
                 android:id="@+id/btn_video_converter"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardBackgroundColor="@color/surface_dark"
+                app:cardBackgroundColor="@color/surface"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="4dp"
                 android:foreground="?attr/selectableItemBackground">
@@ -146,7 +146,7 @@
                         android:layout_width="32dp"
                         android:layout_height="32dp"
                         android:src="@drawable/ic_edit"
-                        app:tint="@color/accent" />
+                        app:tint="@color/color_accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -159,7 +159,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Video Converter (Encrypt)"
-                            android:textColor="@color/white"
+                            android:textColor="@color/text_primary"
                             android:textSize="16sp"
                             android:textStyle="bold" />
 
@@ -167,7 +167,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Encrypt MP4 samples and index into the private container format"
-                            android:textColor="#AAAAAA"
+                            android:textColor="@color/text_secondary"
                             android:textSize="12sp" />
                     </LinearLayout>
                 </LinearLayout>
@@ -180,7 +180,7 @@
         android:id="@+id/progress_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#D9000000"
+        android:background="@color/dialog_scrim"
         android:visibility="gone"
         android:clickable="true"
         android:focusable="true" />
@@ -192,10 +192,10 @@
         android:layout_centerInParent="true"
         android:layout_marginHorizontal="32dp"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/surface_dark"
+        app:cardBackgroundColor="@color/surface"
         app:cardCornerRadius="20dp"
         app:cardElevation="12dp"
-        app:strokeColor="#33FFFFFF"
+        app:strokeColor="@color/color_outline"
         app:strokeWidth="1dp">
 
         <LinearLayout
@@ -208,7 +208,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="SECURE ENCODING"
-                android:textColor="@color/accent"
+                android:textColor="@color/color_accent"
                 android:textSize="12sp"
                 android:letterSpacing="0.1"
                 android:textStyle="bold"
@@ -226,7 +226,7 @@
                     android:layout_toStartOf="@id/progress_percentage"
                     android:layout_alignParentStart="true"
                     android:text="Initializing..."
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="14sp"
                     android:maxLines="1"
                     android:ellipsize="end"
@@ -238,7 +238,7 @@
                     android:layout_height="wrap_content"
                     android:layout_alignParentEnd="true"
                     android:text="0%"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
             </RelativeLayout>
@@ -256,7 +256,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Calculating ETA..."
-                android:textColor="#888888"
+                android:textColor="@color/text_secondary"
                 android:textSize="11sp"
                 android:layout_gravity="end" />
         </LinearLayout>
