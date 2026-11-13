@@ -63,6 +63,11 @@
             android:label="Select Video" />
 
         <activity
+            android:name=".NetworkMountBrowserActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".VideoListActivity"
             android:exported="false"
             android:screenOrientation="portrait"

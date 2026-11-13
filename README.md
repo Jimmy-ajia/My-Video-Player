@@ -8,6 +8,7 @@
 - 主页以可滚动视频列表展示预览、名称和加密状态；支持单项加密/解密、左滑删除和长按多选管理。
 - 多选模式支持全选/取消全选、批量加密、解密和删除；删除前会确认，处理后报告未完成项目。
 - 使用 Room 缓存视频目录；首次启动时自动扫描 Movies、DCIM、Pictures、Download，之后可在主页下拉刷新并增量同步变更。
+- 设置中可配置 SMB 2/3 和 HTTPS WebDAV 共享，并在应用内浏览、播放共享视频。
 - 支持按修改时间倒序、名称正序或倒序排序；最近播放的视频以蓝色边框和名称高亮。
 - 页面和弹窗支持跟随系统明暗主题。
 - 可在设置中管理预设目录和添加共享存储/SD 卡目录。
@@ -26,6 +27,8 @@
 | Kotlin | 2.2.10 |
 | ExoPlayer (Media3) | 1.5.0 |
 | libVLC | 3.7.7 |
+| jcifs-ng | 2.1.10 |
+| OkHttp | 4.12.0 |
 | Room | 2.7.2 |
 
 Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.versions.toml)，应用配置位于 [`app/build.gradle.kts`](./app/build.gradle.kts)。
@@ -47,6 +50,7 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 | `EncryptedVideoUri`、`DecryptionProvider` | 为播放器提供只读虚拟媒体文件描述符。 |
 | `PlayerActivity`、`PlaybackService` | ExoPlayer 播放、播放控制和 MediaSession。 |
 | `VlcFallbackActivity` | ExoPlayer 播放失败后用 libVLC 重试播放。 |
+| `NetworkMountStore`、`NetworkMountRepository`、`NetworkMountBrowserActivity` | 通过 Keystore 加密保存共享凭据，浏览 SMB/WebDAV 并把所选视频缓存到应用私有目录后播放。 |
 
 ## 加密及播放流程
 
@@ -129,6 +133,14 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 
 当前目录选择基于 Android 共享存储/SD 卡的文件路径，其他云盘或文档提供方 URI 不作为扫描目录。Android 11 及以上使用“管理所有文件”权限访问这些路径；扫描只列出支持扩展名的视频及本项目 `.oxu`、旧版 `.mpv` 容器。
 
+### 网络共享
+
+在设置页添加 SMB 共享（仅协商 SMB 2/3，不启用 SMB1）或 HTTPS WebDAV 地址后，可从共享条目进入浏览器。账号和密码以 AES-GCM 加密后保存在应用私有设置中，包装密钥由 Android Keystore 管理；地址中不接受内嵌凭据。WebDAV 使用 Basic 身份验证并要求 HTTPS，且不跟随重定向，避免把凭据转发到其他主机。
+
+首次播放网络视频时，应用会先完整下载到应用私有临时缓存，再交给现有播放器；`.oxu` 文件以密文缓存，并继续通过本机恢复密钥解密播放。该方式需要足够的本机存储空间，不是边下边播；缓存可被 Android 清理，清理后需要重新下载。旧版 `.mpv` 网络文件仍受现有旧格式播放限制。
+
+网络共享配置使用的 Keystore 密钥不参与 Android 备份；重装或清除应用数据后若配置无法解密，需要重新添加共享。SMB 是否启用传输加密取决于共享服务器的 SMB 设置。
+
 ## 密钥与云盘安全边界
 
 - 设备内的恢复主密钥由不可导出的 Android Keystore 密钥加密保存；若用户导出 `.mpvkey` 并妥善保管口令，可在重装应用后导入恢复新加密文件。
@@ -139,9 +151,9 @@ Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.version
 - Android Keystore 提高静态密钥提取难度，但不防拥有设备/应用运行时控制权的攻击者；播放时密钥和解密数据必须在应用可用。
 - 旧版 `MVPCTR01` MP4 容器和更早 marker/signature 格式不兼容新格式，不会被新版本解密。
 
-## libVLC 授权说明
+## 第三方库授权说明
 
-项目使用 `org.videolan.android:libvlc-all:3.7.7`。该 artifact 的 Maven POM 声明 GNU LGPL 2.1；AAR 约 88 MiB。VLC 分发物可能包含具有各自许可条件的编解码器及其他组件，Maven POM 声明不能替代对最终 AAR 内容、NOTICE/源码提供要求和应用分发方式的逐项审查。发布前应由项目维护方完成相应许可合规审查。参考：[VideoLAN 法律信息](https://www.videolan.org/legal.html)。
+项目使用 `org.videolan.android:libvlc-all:3.7.7` 和 `eu.agno3.jcifs:jcifs-ng:2.1.10`。两者 Maven POM 分别声明 GNU LGPL 2.1（libVLC）和 LGPL（jcifs-ng）；VLC AAR 约 88 MiB。VLC 分发物可能包含具有各自许可条件的编解码器及其他组件，Maven POM 声明不能替代对最终分发物内容、NOTICE/源码提供要求和应用分发方式的逐项审查。发布前应由项目维护方完成相应许可合规审查。参考：[VideoLAN 法律信息](https://www.videolan.org/legal.html)、[jcifs-ng 项目](https://github.com/AgNO3/jcifs-ng/)。
 
 ## 构建和测试
 

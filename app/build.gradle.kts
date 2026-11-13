@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.guava.android)
     implementation(libs.glide)
     implementation(libs.libvlc.all)
+    implementation(libs.jcifs.ng)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
