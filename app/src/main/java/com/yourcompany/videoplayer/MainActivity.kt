@@ -29,6 +29,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +40,7 @@ import java.io.IOException
 class MainActivity : AppCompatActivity() {
     private val videoLibraryViewModel: VideoLibraryViewModel by viewModels()
     private lateinit var recyclerView: RecyclerView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var videoAdapter: MainVideoAdapter
     private lateinit var emptyMessage: TextView
     private lateinit var operationPanel: View
@@ -62,6 +64,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.btn_sort).setOnClickListener(::showSortMenu)
 
         recyclerView = findViewById(R.id.videoRecyclerView)
+        swipeRefresh = findViewById(R.id.video_swipe_refresh)
+        swipeRefresh.setOnRefreshListener {
+            if (isConverting || !hasPermission()) {
+                swipeRefresh.isRefreshing = false
+            } else {
+                loadContent()
+            }
+        }
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.setHasFixedSize(true)
         videoAdapter = MainVideoAdapter(
@@ -90,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (hasPermission()) {
             videoAdapter.refreshRecentPlaybackHighlight()
-            loadContent()
+            autoScanOnFirstStartup()
         } else {
             emptyMessage.text = "请授予存储访问权限以扫描视频目录。"
             emptyMessage.visibility = View.VISIBLE
@@ -145,6 +155,13 @@ class MainActivity : AppCompatActivity() {
         videoLibraryViewModel.refreshVideos()
     }
 
+    private fun autoScanOnFirstStartup() {
+        val preferences = getSharedPreferences(SCAN_PREFERENCES, Context.MODE_PRIVATE)
+        if (preferences.getBoolean(AUTO_SCAN_ATTEMPTED_KEY, false)) return
+        preferences.edit().putBoolean(AUTO_SCAN_ATTEMPTED_KEY, true).apply()
+        loadContent()
+    }
+
     private fun displayVideos(videos: List<VideoFile>) {
         videoAdapter.submitList(videos)
         val hasVideos = videos.isNotEmpty()
@@ -155,9 +172,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun displayScanState(state: VideoScanState) {
         when (state) {
-            VideoScanState.Idle, VideoScanState.Complete -> dismissScanDialog()
-            VideoScanState.Scanning -> showScanDialog()
+            VideoScanState.Idle, VideoScanState.Complete -> {
+                swipeRefresh.isRefreshing = false
+                dismissScanDialog()
+            }
+            VideoScanState.Scanning -> {
+                swipeRefresh.isRefreshing = true
+                showScanDialog()
+            }
             is VideoScanState.Failed -> {
+                swipeRefresh.isRefreshing = false
                 dismissScanDialog()
                 Toast.makeText(this, "扫描视频失败：${state.message}", Toast.LENGTH_LONG).show()
             }
@@ -394,6 +418,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val SCAN_PREFERENCES = "VIDEO_SCAN"
+        private const val AUTO_SCAN_ATTEMPTED_KEY = "INITIAL_AUTO_SCAN_ATTEMPTED"
         private const val REQUEST_STORAGE_PERMISSION = 101
         private const val REQUEST_NOTIFICATION_PERMISSION = 103
     }

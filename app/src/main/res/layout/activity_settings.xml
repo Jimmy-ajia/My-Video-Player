@@ -52,7 +52,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="启动及返回主页时扫描所列目录。预设目录可移除，也可通过系统选择器添加共享存储或 SD 卡目录。"
+                    android:text="首次启动时自动扫描；返回主页后可下拉刷新。预设目录可移除，也可通过系统选择器添加共享存储或 SD 卡目录。"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 

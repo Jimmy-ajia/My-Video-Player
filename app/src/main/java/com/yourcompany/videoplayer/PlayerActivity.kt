@@ -868,6 +868,16 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStop() {
+        if (!isInPictureInPictureMode) {
+            controller?.let { player ->
+                saveResumePosition(player.currentPosition)
+                player.pause()
+            }
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() { 
         super.onDestroy()
         updateHandler.removeCallbacks(updateProgressAction)
