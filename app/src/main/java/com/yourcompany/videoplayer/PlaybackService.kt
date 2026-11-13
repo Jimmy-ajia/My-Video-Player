@@ -11,13 +11,13 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
+    private var notificationProvider: PlaybackMediaNotificationProvider? = null
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -73,17 +73,16 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(pendingIntent)
             .build()
 
-        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
-            .setChannelId("playback_channel")
-            .setChannelName(R.string.app_name)
-            .build()
-        
+        val notificationProvider = PlaybackMediaNotificationProvider(this)
+        this.notificationProvider = notificationProvider
         setMediaNotificationProvider(notificationProvider)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        notificationProvider?.release()
+        notificationProvider = null
         mediaSession?.run {
             player.release()
             release()

@@ -14,8 +14,8 @@ android {
         applicationId = "com.yourcompany.videoplayer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.libvlc.all)
     implementation(libs.jcifs.ng)
     implementation(libs.okhttp)
+    implementation(libs.slf4j.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

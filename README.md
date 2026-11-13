@@ -9,7 +9,7 @@
 - 多选模式支持全选/取消全选、批量加密、解密和删除；删除前会确认，处理后报告未完成项目。
 - 使用 Room 缓存视频目录；首次启动时自动扫描 Movies、DCIM、Pictures、Download，之后可在主页下拉刷新并增量同步变更。
 - 设置中可配置 SMB 2/3 和 HTTPS WebDAV 共享，并在应用内浏览、播放共享视频。
-- 系统播放通知显示当前视频名称和播放进度，并提供播放列表的上一个/下一个控制。
+- 系统播放通知显示当前视频名称、`HH:MM:SS / HH:MM:SS` 播放时间，并提供播放列表的上一个/下一个控制。
 - 支持按修改时间倒序、名称正序或倒序排序；最近播放的视频以蓝色边框和名称高亮。
 - 页面和弹窗支持跟随系统明暗主题。
 - 可在设置中管理预设目录和添加共享存储/SD 卡目录。
@@ -30,6 +30,7 @@
 | libVLC | 3.7.7 |
 | jcifs-ng | 2.1.10 |
 | OkHttp | 4.12.0 |
+| SLF4J Android | 1.7.36 |
 | Room | 2.7.2 |
 
 Gradle 依赖版本集中在 [`gradle/libs.versions.toml`](./gradle/libs.versions.toml)，应用配置位于 [`app/build.gradle.kts`](./app/build.gradle.kts)。
@@ -170,14 +171,10 @@ Android SDK 路径通过未纳入版本控制的 `local.properties` 中的 `sdk.
 - `flower.mp4` 和 `flower.webm` 来自 [MDN CC0 video samples](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/)。
 - `flower.mkv`、`flower.mov`、`flower.avi`、`flower.flv`、`flower.ts`、`flower.wmv`、`flower.3gp`、`flower.vob` 是使用 FFmpeg 从上述 CC0 样本生成的容器变体。
 
-单元测试会对这些真实容器样本逐字节加密和还原比对，并覆盖跨 1 MiB 边界的随机范围读取、错误包装密钥拒绝、数据块篡改拒绝及头部修改拒绝。另覆盖解密文件往返、保留输入、同目录输出及同名文件不覆盖；恢复密钥测试覆盖口令加密往返、错误口令/篡改拒绝及导出口令长度限制。样本测试只验证加密容器的字节保真，不代表播放器兼容性；仍需在真实设备上验证 Android Keystore、目录选择器、MediaStore 对 `.oxu`/`.mpv` 的发现、ExoPlayer 到 VLC 的回退，以及各扩展名的实际播放。
+单元测试会对这些真实容器样本逐字节加密和还原比对，并覆盖跨 1 MiB 边界的随机范围读取、错误包装密钥拒绝、数据块篡改拒绝及头部修改拒绝。另覆盖解密文件往返、保留输入、同目录输出及同名文件不覆盖；恢复密钥测试覆盖口令加密往返、错误口令/篡改拒绝及导出口令长度限制；通知时间测试覆盖时分秒格式和未知时长。样本测试只验证加密容器的字节保真，不代表播放器兼容性；仍需在真实设备上验证 Android Keystore、目录选择器、MediaStore 对 `.oxu`/`.mpv` 的发现、ExoPlayer 到 VLC 的回退，以及各扩展名的实际播放。
 
-### 代办功能
- 
- - 视频加载样式优化，或只首次进入扫描
- - 局域网共享 smba
- - webdva挂载
- - 分享加密文件到各个网盘
- - 调整产品名称【私密视频】- 待确认
- - 管理文件，删除，多选，批量加密，解密
+### 后续计划
+
+- 分享加密文件到各个网盘。
+- 确认是否调整产品名称。
 

@@ -11,6 +11,7 @@ media3 = "1.5.0"
 libvlc = "3.7.7"
 jcifs = "2.1.10"
 okhttp = "4.12.0"
+slf4j = "1.7.36"
 constraintlayout = "2.2.0"
 recyclerview = "1.3.2"
 swiperefreshlayout = "1.1.0"
@@ -50,6 +51,7 @@ guava-android = { group = "com.google.guava", name = "guava", version.ref = "gua
 libvlc-all = { group = "org.videolan.android", name = "libvlc-all", version.ref = "libvlc" }
 jcifs-ng = { group = "eu.agno3.jcifs", name = "jcifs-ng", version.ref = "jcifs" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+slf4j-android = { group = "org.slf4j", name = "slf4j-android", version.ref = "slf4j" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
