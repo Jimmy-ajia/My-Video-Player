@@ -229,6 +229,25 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     if (state == Player.STATE_ENDED) { saveResumePosition(0); playNext() }
                 }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    val newPosition = mediaItem?.mediaId?.toIntOrNull() ?: return
+                    if (newPosition !in videoList.indices) return
+                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                        saveResumePosition(0L)
+                    }
+                    position = newPosition
+                    videoTitleTop.text = videoList[position].displayTitle
+                    saveLastWatched()
+                    val resumePosition = getResumePosition(videoList[position].path)
+                    if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+                        resumePosition > 0L
+                    ) {
+                        controller.seekTo(resumePosition)
+                    }
+                    if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                        updateSuggestedList()
+                    }
+                }
                 override fun onPlayerError(error: PlaybackException) {
                     startVlcFallback()
                 }
@@ -290,6 +309,37 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         detectEncryptionJob = lifecycleScope.launch {
+            val playbackItems = withContext(Dispatchers.IO) {
+                videoList.mapIndexedNotNull { index, video ->
+                    val hasLegacyExtension = video.path.substringAfterLast('.', "")
+                        .equals(EncryptedMediaContainer.LEGACY_FILE_EXTENSION, ignoreCase = true)
+                    val encryptionType = when {
+                        EncryptedMediaContainer.isContainer(File(video.path)) ->
+                            VideoFile.EncryptionType.CURRENT
+                        hasLegacyExtension ->
+                            VideoFile.encryptionType(this@PlayerActivity, video.path)
+                        else -> VideoFile.EncryptionType.NONE
+                    }
+                    if (encryptionType == VideoFile.EncryptionType.LEGACY) {
+                        return@mapIndexedNotNull null
+                    }
+                    val mediaUri = if (encryptionType == VideoFile.EncryptionType.CURRENT) {
+                        EncryptedVideoUri.fromPath(video.path)
+                    } else {
+                        Uri.fromFile(File(video.path))
+                    }
+                    MediaItem.Builder()
+                        .setMediaId(index.toString())
+                        .setUri(mediaUri)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(video.displayTitle)
+                                .setDisplayTitle(video.displayTitle)
+                                .build()
+                        )
+                        .build()
+                }
+            }
             val encryptionType = withContext(Dispatchers.IO) {
                 VideoFile.encryptionType(this@PlayerActivity, path)
             }
@@ -298,7 +348,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (encryptionType == VideoFile.EncryptionType.LEGACY) {
                     showUnsupportedVideo()
                 } else {
-                    playWithExo(path, encryptionType == VideoFile.EncryptionType.CURRENT)
+                    playWithExo(path, playbackItems)
                 }
                 updateSuggestedList()
             }
@@ -354,22 +404,26 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun playWithExo(path: String, isEncrypted: Boolean) {
+    private fun playWithExo(path: String, playbackItems: List<MediaItem>) {
         playerView.visibility = View.VISIBLE
         subtitleView.visibility = View.VISIBLE
         saveLastWatched()
-        val mediaUri = if (isEncrypted) {
-            EncryptedVideoUri.fromPath(path)
-        } else {
-            Uri.fromFile(File(path))
-        }
         controller?.let {
             it.repeatMode = Player.REPEAT_MODE_OFF
-            it.setMediaItem(MediaItem.fromUri(mediaUri))
+            val mediaItemIndex = playbackItems.indexOfFirst { item ->
+                item.mediaId == position.toString()
+            }
+            if (mediaItemIndex < 0) {
+                showUnsupportedVideo()
+                return@let
+            }
+            it.setMediaItems(
+                playbackItems,
+                mediaItemIndex,
+                getResumePosition(path)
+            )
             it.prepare()
             it.play()
-            val resumePos = getResumePosition(path)
-            if (resumePos > 0) it.seekTo(resumePos)
         }
     }
 
@@ -722,8 +776,23 @@ class PlayerActivity : AppCompatActivity() {
         if (isPlaying) controller?.pause() else controller?.play()
     }
 
-    private fun playNext() { if (position < videoList.size - 1) { position++; videoTitleTop.text = videoList[position].title; playCurrentVideo() } }
-    private fun playPrevious() { if (position > 0) { position--; videoTitleTop.text = videoList[position].title; playCurrentVideo() } }
+    private fun playNext() {
+        controller?.let { player ->
+            if (player.hasNextMediaItem()) {
+                saveResumePosition(player.currentPosition)
+                player.seekToNextMediaItem()
+            }
+        }
+    }
+
+    private fun playPrevious() {
+        controller?.let { player ->
+            if (player.hasPreviousMediaItem()) {
+                saveResumePosition(player.currentPosition)
+                player.seekToPreviousMediaItem()
+            }
+        }
+    }
     private fun formatTime(ms: Long): String { val s = ms / 1000; val sec = s % 60; val min = (s / 60) % 60; val hr = s / 3600; return if (hr > 0) String.format("%02d:%02d:%02d", hr, min, sec) else String.format("%02d:%02d", min, sec) }
     private fun getResumePosition(p: String): Long = getSharedPreferences("RESUME_INFO", Context.MODE_PRIVATE).getLong(p, 0L)
     private fun saveResumePosition(pos: Long) {
