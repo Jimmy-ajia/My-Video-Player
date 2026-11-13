@@ -4,6 +4,7 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -29,11 +30,17 @@ import java.util.concurrent.ConcurrentHashMap
 internal class MainVideoAdapter(
     private val context: Context,
     private val onVideoClick: (VideoFile) -> Unit,
-    private val onEncryptionToggle: (VideoFile, VideoFile.EncryptionType) -> Unit
+    private val onEncryptionToggle: (VideoFile, VideoFile.EncryptionType) -> Unit,
+    private val onLongPress: (VideoFile) -> Unit,
+    private val onSelectionToggle: (VideoFile) -> Unit,
+    private val onDeleteClick: (VideoFile) -> Unit
 ) : ListAdapter<VideoFile, MainVideoAdapter.VideoHolder>(DIFF_CALLBACK) {
 
     private val adapterScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val encryptionCache = ConcurrentHashMap<String, CachedEncryptionState>()
+    private var managementMode = false
+    private var selectedPaths: Set<String> = emptySet()
+    private var revealedDeletePath: String? = null
     private var recentPath = context.getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
         .getString("LAST_PATH", "")
 
@@ -43,9 +50,18 @@ internal class MainVideoAdapter(
         )
 
     override fun onBindViewHolder(holder: VideoHolder, position: Int, payloads: MutableList<Any>) {
+        val video = getItem(position)
         if (payloads.contains(HIGHLIGHT_PAYLOAD)) {
-            bindRecentHighlight(holder, getItem(position))
-        } else {
+            bindRecentHighlight(holder, video)
+        }
+        if (payloads.contains(MANAGEMENT_PAYLOAD) || payloads.contains(DELETE_REVEAL_PAYLOAD)) {
+            bindManagementState(holder, video)
+        }
+        val handledPayloads = payloads.isNotEmpty() &&
+            payloads.all {
+                it == HIGHLIGHT_PAYLOAD || it == MANAGEMENT_PAYLOAD || it == DELETE_REVEAL_PAYLOAD
+            }
+        if (!handledPayloads) {
             super.onBindViewHolder(holder, position, payloads)
         }
     }
@@ -64,9 +80,30 @@ internal class MainVideoAdapter(
                 onEncryptionToggle(video, holder.encryptionType)
             }
         }
-        holder.itemView.setOnClickListener {
-            if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) onVideoClick(video)
+        holder.deleteButton.setOnClickListener {
+            if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                onDeleteClick(video)
+            }
         }
+        holder.itemView.setOnClickListener {
+            if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                if (managementMode) onSelectionToggle(video) else onVideoClick(video)
+            }
+        }
+        holder.itemView.setOnLongClickListener {
+            if (holder.bindingAdapterPosition == RecyclerView.NO_POSITION || managementMode) {
+                false
+            } else {
+                onLongPress(video)
+                true
+            }
+        }
+        holder.selectionCheckbox.setOnClickListener {
+            if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                onSelectionToggle(video)
+            }
+        }
+        bindManagementState(holder, video)
 
         holder.bindJob?.cancel()
         holder.bindJob = adapterScope.launch {
@@ -142,6 +179,61 @@ internal class MainVideoAdapter(
         }
     }
 
+    fun updateManagementState(enabled: Boolean, selectedPaths: Set<String>) {
+        val modeChanged = managementMode != enabled
+        val changedPaths = this.selectedPaths.union(selectedPaths)
+            .filter { (it in this.selectedPaths) != (it in selectedPaths) }
+        val previousReveal = revealedDeletePath
+        managementMode = enabled
+        this.selectedPaths = selectedPaths.toSet()
+        if (enabled) revealedDeletePath = null
+
+        if (modeChanged) {
+            notifyDataSetChanged()
+        } else {
+            (changedPaths + listOfNotNull(previousReveal, revealedDeletePath))
+                .distinct()
+                .forEach { path ->
+                    val position = currentList.indexOfFirst { it.path == path }
+                    if (position >= 0) notifyItemChanged(position, MANAGEMENT_PAYLOAD)
+                }
+        }
+    }
+
+    fun revealDelete(path: String) {
+        if (managementMode || revealedDeletePath == path) return
+        val previousPath = revealedDeletePath
+        revealedDeletePath = path
+        listOfNotNull(previousPath, path).forEach { changedPath ->
+            val position = currentList.indexOfFirst { it.path == changedPath }
+            if (position >= 0) notifyItemChanged(position, DELETE_REVEAL_PAYLOAD)
+        }
+    }
+
+    fun closeDeleteReveal() {
+        val path = revealedDeletePath ?: return
+        revealedDeletePath = null
+        val position = currentList.indexOfFirst { it.path == path }
+        if (position >= 0) notifyItemChanged(position, DELETE_REVEAL_PAYLOAD)
+    }
+
+    fun isDeleteRevealed(path: String): Boolean = revealedDeletePath == path
+
+    private fun bindManagementState(holder: VideoHolder, video: VideoFile) {
+        holder.encryptionToggle.visibility = if (managementMode) View.GONE else View.VISIBLE
+        holder.selectionCheckbox.visibility = if (managementMode) View.VISIBLE else View.GONE
+        holder.selectionCheckbox.isChecked = video.path in selectedPaths
+        holder.deleteButton.visibility =
+            if (!managementMode && revealedDeletePath == video.path) View.VISIBLE else View.GONE
+        holder.card.translationX = if (!managementMode && revealedDeletePath == video.path) {
+            -holder.deleteButton.width.toFloat().coerceAtLeast(
+                84 * holder.itemView.resources.displayMetrics.density
+            )
+        } else {
+            0f
+        }
+    }
+
     private fun bindRecentHighlight(holder: VideoHolder, video: VideoFile) {
         val isRecent = video.path == recentPath
         val density = holder.itemView.resources.displayMetrics.density
@@ -163,6 +255,7 @@ internal class MainVideoAdapter(
         holder.bindJob?.cancel()
         Glide.with(holder.thumbnail).clear(holder.thumbnail)
         holder.boundPath = null
+        holder.card.translationX = 0f
         super.onViewRecycled(holder)
     }
 
@@ -177,6 +270,8 @@ internal class MainVideoAdapter(
         val title: TextView = view.findViewById(R.id.main_video_title)
         val encryptionState: TextView = view.findViewById(R.id.main_video_encryption_state)
         val encryptionToggle: ImageButton = view.findViewById(R.id.main_video_encryption_toggle)
+        val selectionCheckbox: CheckBox = view.findViewById(R.id.main_video_selection_checkbox)
+        val deleteButton: View = view.findViewById(R.id.main_video_delete)
         var encryptionType: VideoFile.EncryptionType = VideoFile.EncryptionType.NONE
         var boundPath: String? = null
         var bindJob: Job? = null
@@ -184,6 +279,8 @@ internal class MainVideoAdapter(
 
     companion object {
         private const val HIGHLIGHT_PAYLOAD = "recent_playback_highlight"
+        private const val MANAGEMENT_PAYLOAD = "management_selection"
+        private const val DELETE_REVEAL_PAYLOAD = "delete_reveal"
 
         private data class CachedEncryptionState(
             val modified: Long,

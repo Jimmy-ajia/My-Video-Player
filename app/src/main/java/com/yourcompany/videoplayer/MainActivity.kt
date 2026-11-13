@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Canvas
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -27,7 +28,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.activity.OnBackPressedCallback
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.CancellationException
@@ -43,12 +46,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var videoAdapter: MainVideoAdapter
     private lateinit var emptyMessage: TextView
+    private lateinit var managementToolbar: View
+    private lateinit var managementCount: TextView
     private lateinit var operationPanel: View
     private lateinit var operationText: TextView
     private lateinit var operationProgress: ProgressBar
     private var scanDialog: AlertDialog? = null
     private var isConverting = false
     private var isCheckingForPlaintext = false
+    private var managementMode = false
+    private val selectedVideoPaths = linkedSetOf<String>()
+    private lateinit var managementBackCallback: OnBackPressedCallback
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,14 +85,46 @@ class MainActivity : AppCompatActivity() {
         videoAdapter = MainVideoAdapter(
             context = this,
             onVideoClick = ::playVideo,
-            onEncryptionToggle = ::requestEncryptionToggle
+            onEncryptionToggle = ::requestEncryptionToggle,
+            onLongPress = ::enterManagementMode,
+            onSelectionToggle = ::toggleVideoSelection,
+            onDeleteClick = ::confirmDeleteVideo
         )
         recyclerView.adapter = videoAdapter
+        attachSwipeActions()
 
         emptyMessage = findViewById(R.id.video_list_empty)
+        managementToolbar = findViewById(R.id.main_management_toolbar)
+        managementCount = findViewById(R.id.main_management_count)
         operationPanel = findViewById(R.id.video_operation_panel)
         operationText = findViewById(R.id.video_operation_text)
         operationProgress = findViewById(R.id.video_operation_progress)
+        findViewById<View>(R.id.main_management_select_all).setOnClickListener {
+            if (selectedVideoPaths.size == videoAdapter.currentList.size) {
+                selectedVideoPaths.clear()
+            } else {
+                selectedVideoPaths.clear()
+                selectedVideoPaths.addAll(videoAdapter.currentList.map(VideoFile::path))
+            }
+            updateManagementUi()
+        }
+        findViewById<View>(R.id.main_management_encrypt).setOnClickListener {
+            confirmBatchConversion(encrypting = true)
+        }
+        findViewById<View>(R.id.main_management_decrypt).setOnClickListener {
+            confirmBatchConversion(encrypting = false)
+        }
+        findViewById<View>(R.id.main_management_delete).setOnClickListener {
+            confirmBatchDelete()
+        }
+        findViewById<View>(R.id.main_management_done).setOnClickListener { exitManagementMode() }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                exitManagementMode()
+            }
+        }.also { callback ->
+            managementBackCallback = callback
+        })
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -163,7 +203,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun displayVideos(videos: List<VideoFile>) {
-        videoAdapter.submitList(videos)
+        selectedVideoPaths.retainAll(videos.mapTo(mutableSetOf(), VideoFile::path))
+        videoAdapter.submitList(videos) {
+            if (managementMode) updateManagementUi()
+        }
         val hasVideos = videos.isNotEmpty()
         emptyMessage.text = if (hasVideos) "" else "所选目录中没有找到视频。"
         emptyMessage.visibility = if (hasVideos) View.GONE else View.VISIBLE
@@ -238,6 +281,334 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun attachSwipeActions() {
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            0,
+            ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+        ) {
+            override fun getSwipeDirs(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder
+            ): Int {
+                if (managementMode) return 0
+                val holder = viewHolder as? MainVideoAdapter.VideoHolder ?: return 0
+                val path = holder.boundPath ?: return 0
+                return if (videoAdapter.isDeleteRevealed(path)) {
+                    ItemTouchHelper.RIGHT
+                } else {
+                    ItemTouchHelper.LEFT
+                }
+            }
+
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean = false
+
+            override fun getSwipeThreshold(viewHolder: RecyclerView.ViewHolder): Float = 0.15f
+
+            override fun onChildDraw(
+                canvas: Canvas,
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                dX: Float,
+                dY: Float,
+                actionState: Int,
+                isCurrentlyActive: Boolean
+            ) {
+                val holder = viewHolder as? MainVideoAdapter.VideoHolder ?: return
+                val path = holder.boundPath ?: return
+                val revealWidth = dp(88).toFloat()
+                val start = if (videoAdapter.isDeleteRevealed(path)) -revealWidth else 0f
+                val delta = if (start < 0f) dX.coerceAtLeast(0f) else dX.coerceAtMost(0f)
+                holder.card.translationX = (start + delta).coerceIn(-revealWidth, 0f)
+            }
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                val holder = viewHolder as? MainVideoAdapter.VideoHolder ?: return
+                val path = holder.boundPath ?: return
+                holder.card.translationX =
+                    if (videoAdapter.isDeleteRevealed(path)) -dp(88).toFloat() else 0f
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val holder = viewHolder as? MainVideoAdapter.VideoHolder ?: return
+                val path = holder.boundPath ?: return
+                if (direction == ItemTouchHelper.LEFT) {
+                    videoAdapter.revealDelete(path)
+                } else {
+                    videoAdapter.closeDeleteReveal()
+                }
+            }
+        }).attachToRecyclerView(recyclerView)
+    }
+
+    private fun enterManagementMode(video: VideoFile) {
+        managementMode = true
+        selectedVideoPaths.clear()
+        selectedVideoPaths.add(video.path)
+        videoAdapter.closeDeleteReveal()
+        updateManagementUi()
+    }
+
+    private fun toggleVideoSelection(video: VideoFile) {
+        if (!managementMode) return
+        if (!selectedVideoPaths.add(video.path)) selectedVideoPaths.remove(video.path)
+        updateManagementUi()
+    }
+
+    private fun exitManagementMode() {
+        managementMode = false
+        selectedVideoPaths.clear()
+        updateManagementUi()
+    }
+
+    private fun updateManagementUi() {
+        managementToolbar.visibility = if (managementMode) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_sort).visibility = if (managementMode) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_settings).visibility = if (managementMode) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.toolbar_title).text = if (managementMode) {
+            "视频管理"
+        } else {
+            "Videos"
+        }
+        managementCount.text = "已选 ${selectedVideoPaths.size} 项"
+        managementBackCallback.isEnabled = managementMode
+        findViewById<TextView>(R.id.main_management_select_all).text =
+            if (videoAdapter.currentList.isNotEmpty() &&
+                selectedVideoPaths.size == videoAdapter.currentList.size
+            ) {
+                "取消全选"
+            } else {
+                "全选"
+            }
+        videoAdapter.updateManagementState(managementMode, selectedVideoPaths)
+    }
+
+    private fun selectedVideos(): List<VideoFile> =
+        videoAdapter.currentList.filter { it.path in selectedVideoPaths }
+
+    private fun confirmDeleteVideo(video: VideoFile) {
+        AlertDialog.Builder(this)
+            .setTitle("删除视频")
+            .setMessage("确定删除“${video.displayTitle}”？此操作无法撤销。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("删除") { _, _ ->
+                videoAdapter.closeDeleteReveal()
+                deleteVideos(listOf(video))
+            }
+            .show()
+    }
+
+    private fun confirmBatchDelete() {
+        val videos = selectedVideos()
+        if (videos.isEmpty()) {
+            Toast.makeText(this, "请先选择视频。", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("批量删除")
+            .setMessage("确定删除所选的 ${videos.size} 个视频？此操作无法撤销。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("删除") { _, _ -> deleteVideos(videos) }
+            .show()
+    }
+
+    private fun confirmBatchConversion(encrypting: Boolean) {
+        val videos = selectedVideos()
+        if (videos.isEmpty()) {
+            Toast.makeText(this, "请先选择视频。", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val action = actionName(encrypting)
+        AlertDialog.Builder(this)
+            .setTitle("批量$action")
+            .setMessage("将检查所选视频并转换支持的文件。原始文件会保留，不覆盖已有文件。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton(action) { _, _ -> convertVideos(videos, encrypting) }
+            .show()
+    }
+
+    private fun convertVideos(videos: List<VideoFile>, encrypting: Boolean) {
+        if (isConverting) return
+        isConverting = true
+        operationPanel.visibility = View.VISIBLE
+        operationProgress.progress = 0
+
+        lifecycleScope.launch {
+            var convertedCount = 0
+            val issues = mutableListOf<String>()
+            try {
+                val typedVideos = withContext(Dispatchers.IO) {
+                    videos.map { video ->
+                        video to VideoFile.encryptionType(applicationContext, video.path)
+                    }
+                }
+                val targetType = if (encrypting) {
+                    VideoFile.EncryptionType.NONE
+                } else {
+                    VideoFile.EncryptionType.CURRENT
+                }
+                val eligibleVideos = typedVideos.filter { it.second == targetType }
+                typedVideos.filter { it.second != targetType }.forEach { (video, type) ->
+                    val reason = if (type == VideoFile.EncryptionType.LEGACY) {
+                        "旧格式加密文件不支持转换"
+                    } else if (encrypting) {
+                        "已经加密"
+                    } else {
+                        "尚未加密"
+                    }
+                    issues += "${video.displayTitle}：$reason"
+                }
+
+                eligibleVideos.forEachIndexed { index, (video, _) ->
+                    operationText.text =
+                        "正在${actionName(encrypting)} (${index + 1}/${eligibleVideos.size})：${video.displayTitle}"
+                    try {
+                        val output = withContext(Dispatchers.IO) {
+                            val onProgress: (Int) -> Unit = { progress ->
+                                runOnUiThread {
+                                    operationProgress.progress =
+                                        ((index * 100 + progress) / eligibleVideos.size)
+                                            .coerceIn(0, 100)
+                                }
+                            }
+                            val source = File(video.path)
+                            if (encrypting) {
+                                VideoFileConverter.encrypt(applicationContext, source, onProgress)
+                            } else {
+                                VideoFileConverter.decrypt(applicationContext, source, onProgress)
+                            }
+                        }
+                        MediaScannerConnection.scanFile(
+                            this@MainActivity,
+                            arrayOf(output.absolutePath),
+                            arrayOf(EncryptedMediaMimeType.fromExtension(output.extension)),
+                            null
+                        )
+                        convertedCount++
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        issues += "${video.displayTitle}：${error.message ?: "未知错误"}"
+                    }
+                }
+                showOperationResult("${actionName(encrypting)}结果", convertedCount, issues)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "批量${actionName(encrypting)}失败：${error.message ?: "未知错误"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isConverting = false
+                operationPanel.visibility = View.GONE
+                if (hasPermission()) loadContent()
+            }
+        }
+    }
+
+    private fun deleteVideos(videos: List<VideoFile>) {
+        if (isConverting) return
+        isConverting = true
+        operationPanel.visibility = View.VISIBLE
+        operationText.text = "正在删除 ${videos.size} 个视频…"
+        operationProgress.progress = 0
+
+        lifecycleScope.launch {
+            var deletedCount = 0
+            val issues = mutableListOf<String>()
+            try {
+                val results = withContext(Dispatchers.IO) {
+                    videos.mapIndexed { index, video ->
+                        val issue = try {
+                            val file = File(video.path)
+                            if (!file.isFile ||
+                                file.length() != video.size ||
+                                (video.dateModified > 0L &&
+                                    file.lastModified() / 1000 != video.dateModified)
+                            ) {
+                                throw IOException("文件不存在或已变化，未删除。")
+                            }
+                            if (!file.delete()) throw IOException("系统拒绝删除此文件。")
+                            null
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            error.message ?: "未知错误"
+                        }
+                        runOnUiThread {
+                            operationProgress.progress = ((index + 1) * 100 / videos.size)
+                        }
+                        video to issue
+                    }
+                }
+                results.forEach { (video, issue) ->
+                    if (issue == null) {
+                        deletedCount++
+                        clearPlaybackInfo(video.path)
+                    } else {
+                        issues += "${video.displayTitle}：$issue"
+                    }
+                }
+                videoAdapter.closeDeleteReveal()
+                showOperationResult("删除结果", deletedCount, issues)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "删除失败：${error.message ?: "未知错误"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isConverting = false
+                operationPanel.visibility = View.GONE
+                if (hasPermission()) loadContent()
+            }
+        }
+    }
+
+    private fun clearPlaybackInfo(path: String) {
+        getSharedPreferences("RESUME_INFO", Context.MODE_PRIVATE)
+            .edit()
+            .remove(path)
+            .apply()
+        val playbackPreferences = getSharedPreferences("PLAY_INFO", Context.MODE_PRIVATE)
+        if (playbackPreferences.getString("LAST_PATH", null) == path) {
+            playbackPreferences.edit()
+                .remove("LAST_PATH")
+                .remove("LAST_ID")
+                .apply()
+        }
+    }
+
+    private fun showOperationResult(title: String, successCount: Int, issues: List<String>) {
+        val message = buildString {
+            append("成功：$successCount 项")
+            if (issues.isNotEmpty()) {
+                append("\n未处理：${issues.size} 项")
+                issues.take(MAX_OPERATION_ISSUES).forEach { append("\n• $it") }
+                if (issues.size > MAX_OPERATION_ISSUES) {
+                    append("\n另有 ${issues.size - MAX_OPERATION_ISSUES} 项，请检查文件后重试。")
+                }
+            }
+        }
+        if (issues.isEmpty()) {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("确定", null)
+                .show()
+        }
+    }
 
     private fun requestEncryptionToggle(
         video: VideoFile,
@@ -418,6 +789,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val MAX_OPERATION_ISSUES = 8
         private const val SCAN_PREFERENCES = "VIDEO_SCAN"
         private const val AUTO_SCAN_ATTEMPTED_KEY = "INITIAL_AUTO_SCAN_ATTEMPTED"
         private const val REQUEST_STORAGE_PERMISSION = 101
