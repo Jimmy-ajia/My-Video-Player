@@ -42,8 +42,20 @@ class NetworkMountRepositoryTest {
         )
     }
 
+    @Test
+    fun acceptsBareIpAndDefaultsToRootShare() {
+        assertEquals(
+            "smb://192.168.1.10/",
+            NetworkMountRepository.normalizeServerUrl(
+                NetworkMountType.SMB,
+                "192.168.1.10"
+            )
+        )
+    }
+
+
     @Test(expected = IllegalArgumentException::class)
-    fun rejectsSmbAddressWithoutShare() {
+    fun rejectsSmbFullUriWithoutSharePath() {
         NetworkMountRepository.normalizeServerUrl(
             NetworkMountType.SMB,
             "smb://192.168.1.10/"

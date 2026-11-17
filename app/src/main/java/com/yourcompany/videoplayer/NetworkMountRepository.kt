@@ -50,8 +50,14 @@ internal object NetworkMountRepository {
 
     fun normalizeServerUrl(type: NetworkMountType, value: String): String {
         val trimmed = value.trim()
+        // For SMB, accept bare IP/host and wrap with smb:// scheme
+        val input = if (type == NetworkMountType.SMB && !trimmed.contains("://")) {
+            "smb://$trimmed"
+        } else {
+            trimmed
+        }
         val uri = try {
-            URI(trimmed)
+            URI(input)
         } catch (_: java.net.URISyntaxException) {
             throw IllegalArgumentException("网络共享地址格式无效。")
         }
@@ -66,18 +72,28 @@ internal object NetworkMountRepository {
         ) {
             throw IllegalArgumentException(
                 if (type == NetworkMountType.SMB) {
-                    "请输入 smb://服务器/共享目录 地址，不要把用户名或密码放在地址中。"
+                    "请输入有效的服务器地址，不要把用户名或密码放在地址中。"
                 } else {
                     "请输入有效的 https:// WebDAV 地址，不要把用户名或密码放在地址中。"
                 }
             )
         }
-        if (type == NetworkMountType.SMB &&
-            uri.path.orEmpty().trim('/').isEmpty()
-        ) {
-            throw IllegalArgumentException("SMB 地址需要包含共享目录名称。")
+        // SMB without share path: bare IP defaults to root, but full URIs and dot-hostnames require explicit path.
+        if (type == NetworkMountType.SMB) {
+            val host = uri.host.orEmpty()
+            val hasDotHostname = host.contains(".") && !host.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")
+            val isFullUriWithTrailingSlash = trimmed.trimEnd('/') != trimmed && trimmed.endsWith("/")
+
+            if (isFullUriWithTrailingSlash || hasDotHostname) {
+                throw IllegalArgumentException(
+                    "SMB 地址需要包含共享目录名称。"
+                )
+            }
+            // Bare IP defaults to root share
+            "smb://${host.lowercase()}/"
+        } else {
+            trimmed.trimEnd('/') + "/"
         }
-        return trimmed.trimEnd('/') + "/"
     }
 
     fun list(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> =

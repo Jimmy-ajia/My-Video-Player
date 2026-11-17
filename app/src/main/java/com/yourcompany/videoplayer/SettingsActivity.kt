@@ -92,48 +92,56 @@ class SettingsActivity : AppCompatActivity() {
             scanDirectoryPicker.launch(null)
         }
         findViewById<View>(R.id.btn_add_smb_mount).setOnClickListener {
-            showAddNetworkMountDialog(NetworkMountType.SMB)
+            showNetworkMountDialog(NetworkMountType.SMB)
         }
         findViewById<View>(R.id.btn_add_webdav_mount).setOnClickListener {
-            showAddNetworkMountDialog(NetworkMountType.WEBDAV)
+            showNetworkMountDialog(NetworkMountType.WEBDAV)
         }
         refreshScanDirectories()
         refreshNetworkMounts()
     }
 
-    private fun showAddNetworkMountDialog(type: NetworkMountType) {
+    private fun showNetworkMountDialog(type: NetworkMountType, mount: NetworkMount? = null) {
+        val title = if (mount == null) {
+            if (type == NetworkMountType.SMB) "添加 SMB 共享" else "添加 WebDAV"
+        } else {
+            if (type == NetworkMountType.SMB) "编辑 SMB 共享" else "编辑 WebDAV"
+        }
+
         val nameInput = EditText(this).apply {
             hint = "名称"
             setSingleLine(true)
+            text = mount?.name.orEmpty()
         }
         val addressInput = EditText(this).apply {
             hint = if (type == NetworkMountType.SMB) {
-                "smb://192.168.1.10/share/"
+                "192.168.1.10 或 hostname"
             } else {
                 "https://example.com/remote.php/dav/"
             }
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
+            text = mount?.serverUrl.orEmpty()
         }
-        val domainInput = if (type == NetworkMountType.SMB) {
+        val domainInput: EditText? = if (type == NetworkMountType.SMB) {
             EditText(this).apply {
                 hint = "域名/工作组（可选）"
                 setSingleLine(true)
+                text = mount?.domain.orEmpty()
             }
-        } else {
-            null
-        }
+        } else null
         val usernameInput = EditText(this).apply {
             hint = "用户名（可选）"
             setSingleLine(true)
+            text = mount?.username.orEmpty()
         }
         val passwordInput = EditText(this).apply {
-            hint = "密码"
+            hint = if (mount != null) "密码（留空不变）" else "密码"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine(true)
         }
         val fields = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.Vertical
             val padding = (24 * resources.displayMetrics.density).toInt()
             setPadding(padding, padding, padding, 0)
             addView(nameInput)
@@ -142,42 +150,53 @@ class SettingsActivity : AppCompatActivity() {
             addView(usernameInput)
             addView(passwordInput)
         }
+
         val dialog = AlertDialog.Builder(this)
-            .setTitle(if (type == NetworkMountType.SMB) "添加 SMB 共享" else "添加 WebDAV")
+            .setTitle(title)
             .setView(fields)
             .setNegativeButton("取消", null)
-            .setPositiveButton("添加", null)
+            .setPositiveButton(if (mount == null) "添加" else "保存", null)
             .create()
+
+        var localPasswordInput: EditText? = passwordInput
         dialog.setOnDismissListener {
-            passwordInput.text?.clear()
+            localPasswordInput?.text?.clear()
         }
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val posButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            posButton.setOnClickListener {
                 val name = nameInput.text.toString().trim()
-                if (name.isBlank()) {
+                if (name.isEmpty()) {
                     nameInput.error = "请输入名称。"
                     return@setOnClickListener
                 }
                 val normalizedUrl = try {
                     NetworkMountRepository.normalizeServerUrl(
                         type,
-                        addressInput.text.toString()
+                        addressInput.text.toString(),
                     )
                 } catch (error: IllegalArgumentException) {
                     addressInput.error = error.message
                     return@setOnClickListener
                 }
-                val mount = NetworkMount(
-                    id = java.util.UUID.randomUUID().toString(),
+
+                val isEdit = mount != null
+                val newMount = NetworkMount(
+                    id = if (isEdit) mount!!.id else java.util.UUID.randomUUID().toString(),
                     name = name,
                     type = type,
                     serverUrl = normalizedUrl,
                     username = usernameInput.text.toString().trim(),
-                    password = passwordInput.text.toString(),
-                    domain = domainInput?.text?.toString()?.trim().orEmpty()
+                    password = if (isEdit && localPasswordInput?.text.isNullOrBlank()) {
+                        mount!!.password
+                    } else {
+                        localPasswordInput?.text.toString() ?: ""
+                    },
+                    domain = domainInput?.text?.toString()?.trim().orEmpty(),
                 )
+
                 try {
-                    NetworkMountStore.put(applicationContext, mount)
+                    NetworkMountStore.put(applicationContext, newMount)
                     dialog.dismiss()
                     refreshNetworkMounts()
                     Toast.makeText(this, "已保存网络共享。", Toast.LENGTH_SHORT).show()
@@ -185,13 +204,13 @@ class SettingsActivity : AppCompatActivity() {
                     Toast.makeText(
                         this,
                         error.message ?: "无法保存网络共享。",
-                        Toast.LENGTH_LONG
+                        Toast.LENGTH_LONG,
                     ).show()
                 } catch (error: GeneralSecurityException) {
                     Toast.makeText(
                         this,
                         error.message ?: "无法加密网络共享凭据。",
-                        Toast.LENGTH_LONG
+                        Toast.LENGTH_LONG,
                     ).show()
                 }
             }
@@ -222,6 +241,7 @@ class SettingsActivity : AppCompatActivity() {
             })
             return
         }
+
         mounts.forEach { mount ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -229,30 +249,43 @@ class SettingsActivity : AppCompatActivity() {
                 val padding = (6 * resources.displayMetrics.density).toInt()
                 setPadding(0, padding, 0, padding)
             }
+
             val label = TextView(this).apply {
                 text = "${mount.name}（${mount.type.name}）\n${mount.serverUrl}"
                 setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_primary))
                 textSize = 12f
                 maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
+                ellipsize = android.text.TextUtils.TruncateAt.Middle
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
+
             val browseButton = com.google.android.material.button.MaterialButton(this).apply {
                 text = "浏览"
                 setOnClickListener {
-                    startActivity(
-                        Intent(this@SettingsActivity, NetworkMountBrowserActivity::class.java)
-                            .putExtra(NetworkMountBrowserActivity.EXTRA_MOUNT_ID, mount.id)
-                    )
+                    startActivity(Intent(this@SettingsActivity, NetworkMountBrowserActivity::class.java)
+                        .putExtra(NetworkMountBrowserActivity.EXTRA_MOUNT_ID, mount.id))
                 }
             }
+
+            val editButton = android.widget.ImageButton(this).apply {
+                setImageResource(R.drawable.ic_edit)
+                contentDescription = "编辑 ${mount.name}"
+                background = getDrawable(
+                    android.util.TypedValue().let { value ->
+                        theme.resolveAttribute(
+                            android.R.attr.selectableItemBackgroundBorderless,
+                            value,
+                            true
+                        )
+                        value.resourceId
+                    }
+                )
+                setOnClickListener { showNetworkMountDialog(mount.type, mount) }
+            }
+
             val removeButton = android.widget.ImageButton(this).apply {
                 setImageResource(R.drawable.ic_delete)
-                contentDescription = "移除网络共享 ${mount.name}"
+                contentDescription = "移除 ${mount.name}"
                 background = getDrawable(
                     android.util.TypedValue().let { value ->
                         theme.resolveAttribute(
@@ -265,8 +298,10 @@ class SettingsActivity : AppCompatActivity() {
                 )
                 setOnClickListener { confirmRemoveNetworkMount(mount) }
             }
+
             row.addView(label)
             row.addView(browseButton)
+            row.addView(editButton)
             row.addView(removeButton)
             container.addView(row)
         }
