@@ -155,6 +155,47 @@ internal object NetworkMountRepository {
         }
     }
 
+    /** Returns a URL for direct streaming playback without downloading. */
+    fun streamUrl(mount: NetworkMount, entry: NetworkMountEntry): String =
+        when (mount.type) {
+            NetworkMountType.SMB -> smbStreamUrl(mount, entry)
+            NetworkMountType.WEBDAV -> webDavStreamUrl(mount, entry)
+        }
+
+    fun streamContentLength(
+        mount: NetworkMount,
+        entry: NetworkMountEntry
+    ): Long? = try {
+        val response = when (mount.type) {
+            NetworkMountType.SMB -> {
+                val url = smbStreamUrl(mount, entry)
+                httpClient.newCall(Request.Builder().url(url).head().build()).execute()
+            }
+            NetworkMountType.WEBDAV -> {
+                val url = webDavStreamUrl(mount, entry)
+                httpClient.newCall(Request.Builder().url(url).head().build()).execute()
+            }
+        }
+        if (response.code == 200 || response.code == 206) {
+            response.headers("Content-Length")?.firstOrNull()?.toLongOrNull()
+        } else null
+    } catch (_: IOException) null
+
+    private fun smbStreamUrl(mount: NetworkMount, entry: NetworkMountEntry): String {
+        val encodedPath = entry.relativePath.split('/')
+            .filter(String::isNotEmpty)
+            .joinToString("/") { Uri.encode(it) }
+        val suffix = if (encodedPath.isEmpty()) "/" else "/$encodedPath"
+        return mount.serverUrl.trimEnd('/') + suffix
+    }
+
+    private fun webDavStreamUrl(mount: NetworkMount, entry: NetworkMountEntry): String {
+        val encodedPath = entry.relativePath.split('/')
+            .filter(String::isNotEmpty)
+            .joinToString("/") { Uri.encode(it) }
+        return URI(mount.serverUrl).resolve(entry.name).toString()
+    }
+
     private fun listSmb(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> {
         val context = smbContext(mount)
         val directory = smbFile(mount, relativePath, context)

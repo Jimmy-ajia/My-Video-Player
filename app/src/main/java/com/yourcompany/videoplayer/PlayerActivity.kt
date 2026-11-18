@@ -955,4 +955,3 @@ class PlayerActivity : AppCompatActivity() {
         previewJob?.cancel()
         retrieverInitJob?.cancel()
     }
-}

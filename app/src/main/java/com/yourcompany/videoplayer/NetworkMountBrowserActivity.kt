@@ -129,46 +129,26 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     private fun playRemoteVideo(entry: NetworkMountEntry) {
         if (isBusy) return
         isBusy = true
-        progress.isIndeterminate = entry.size <= 0L
-        progress.progress = 0
-        progress.visibility = View.VISIBLE
-        status.text = "正在下载到应用临时缓存：${entry.name}"
         lifecycleScope.launch {
             try {
-                val localFile = withContext(Dispatchers.IO) {
-                    NetworkMountRepository.download(applicationContext, mount, entry) { percent ->
-                        runOnUiThread {
-                            progress.isIndeterminate = false
-                            progress.progress = percent
-                            status.text = "正在下载：${entry.name} ($percent%)"
-                        }
-                    }
+                val streamUrl = withContext(Dispatchers.IO) {
+                    NetworkMountRepository.streamUrl(mount, entry)
                 }
-                val video = VideoFile(
-                    id = localFile.absolutePath.hashCode().toLong(),
-                    path = localFile.absolutePath,
-                    title = entry.name,
-                    folderName = mount.name,
-                    size = localFile.length(),
-                    duration = 0L,
-                    dateModified = localFile.lastModified() / 1000
-                )
                 startActivity(
                     Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
-                        .putExtra("VIDEO_LIST", arrayListOf(video))
-                        .putExtra("POSITION", 0)
+                        .putExtra(PlayerActivity.EXTRA_REMOTE_STREAM_URL, streamUrl)
+                        .putExtra("VIDEO_TITLE", entry.name)
                 )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: IOException) {
-                showNetworkError(error.message ?: "无法下载网络视频。")
+                showNetworkError(error.message ?: "无法获取网络视频。")
             } catch (error: GeneralSecurityException) {
                 showNetworkError(error.message ?: "网络共享身份验证失败。")
             } catch (error: IllegalArgumentException) {
                 showNetworkError(error.message ?: "网络共享地址无效。")
             } finally {
                 isBusy = false
-                progress.visibility = View.GONE
             }
         }
     }

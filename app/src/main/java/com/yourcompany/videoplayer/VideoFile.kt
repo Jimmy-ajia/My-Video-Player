@@ -13,7 +13,8 @@ data class VideoFile(
     val size: Long,
     var duration: Long,
     val dateModified: Long = 0L,
-    val mimeType: String = ""
+    val mimeType: String = "",
+    val networkMountId: String? = null
 ) : Serializable {
 
     val formattedDuration: String get() = formatDuration(duration)
@@ -34,7 +35,7 @@ data class VideoFile(
             return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds)
             else String.format("%02d:%02d", minutes, seconds)
         }
-        
+
         private fun formatSize(bytes: Long): String {
             if (bytes <= 0) return "0 B"
             val mb = bytes / (1024.0 * 1024.0)

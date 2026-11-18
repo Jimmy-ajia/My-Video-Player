@@ -21,7 +21,8 @@ data class VideoEntity(
     val size: Long,
     val duration: Long,
     val dateModified: Long,
-    val mimeType: String
+    val mimeType: String,
+    val networkMountId: String? = null
 ) {
     fun toVideoFile() = VideoFile(
         id = id,
@@ -31,7 +32,8 @@ data class VideoEntity(
         size = size,
         duration = duration,
         dateModified = dateModified,
-        mimeType = mimeType
+        mimeType = mimeType,
+        networkMountId = networkMountId
     )
 
     companion object {
@@ -43,7 +45,8 @@ data class VideoEntity(
             size = video.size,
             duration = video.duration,
             dateModified = video.dateModified,
-            mimeType = video.mimeType
+            mimeType = video.mimeType,
+            networkMountId = video.networkMountId
         )
     }
 }
@@ -80,7 +83,7 @@ interface VideoDao {
     suspend fun deleteByPaths(paths: List<String>)
 }
 
-@Database(entities = [VideoEntity::class], version = 1, exportSchema = true)
+@Database(entities = [VideoEntity::class], version = 2, exportSchema = true)
 abstract class VideoLibraryDatabase : RoomDatabase() {
     abstract fun videoDao(): VideoDao
 
@@ -94,7 +97,11 @@ abstract class VideoLibraryDatabase : RoomDatabase() {
                     context.applicationContext,
                     VideoLibraryDatabase::class.java,
                     "video-library.db"
-                ).build().also { instance = it }
+                ).setMigration(1, 2, object : Migration(1, 2) {
+                    override fun migrate(database: Database, migrationContext: MigrationContext) {
+                        database.execSQL("ALTER TABLE videos ADD COLUMN networkMountId TEXT")
+                    }
+                }).build().also { instance = it }
             }
     }
 }
