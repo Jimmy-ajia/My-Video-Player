@@ -8,6 +8,7 @@ import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -129,28 +130,84 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     private fun playRemoteVideo(entry: NetworkMountEntry) {
         if (isBusy) return
         isBusy = true
+        // Check content length — abort large files that exceed the download limit.
+        val maxDownloadSizeMb = 256
+        try {
+            val contentLength =  withContext(Dispatchers.IO) {
+                NetworkMountRepository.streamContentLength(mount, entry)
+            }
+            if (contentLength != null && contentLength!! > maxDownloadSizeMb * 1024L * 1024L) {
+                showNetworkError("该视频文件是 $((maxDownloadSizeMb + 1).toString()) MB，超出最大下载限制。")
+                isBusy = false
+                return
+            }
+        } catch (_: Exception) { /* length check failed — proceed with download */ }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("正在准备视频")
+            .setCancelable(false)
+            .build()
+        val progressBar = ProgressBar(this).apply {
+            isIndeterminate = false
+            max = 100
+            setProgress(0)
+            setMax(progressBar.max)
+        }
+        dialog.customView = progressBar
+
         lifecycleScope.launch {
             try {
-                val streamUrl = withContext(Dispatchers.IO) {
-                    NetworkMountRepository.streamUrl(mount, entry)
+                val downloadedFile = withContext(Dispatchers.IO) {
+                    NetworkMountRepository.download(applicationContext, mount, entry) { percent ->
+                        runOnUiThread {
+                            progressBar.isIndeterminate = false
+                            progressBar.progress = percent.coerceIn(0, 100)
+                        }
+                    }
                 }
-                startActivity(
-                    Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
-                        .putExtra(PlayerActivity.EXTRA_REMOTE_STREAM_URL, streamUrl)
-                        .putExtra("VIDEO_TITLE", entry.name)
+
+                val video = VideoFile(
+                    id = downloadedFile.absolutePath.hashCode().toLong(),
+                    path = downloadedFile.absolutePath,
+                    title = entry.name,
+                    folderName = mount.name,
+                    size = downloadedFile.length(),
+                    duration = 0L,
+                    dateModified = downloadedFile.lastModified() / 1000
                 )
+
+                runOnUiThread {
+                    dialog.dismiss()
+                    isBusy = false
+                    startActivity(
+                        Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
+                            .putExtra(PlayerActivity.EXTRA_VIDEO_URI, downloadedFile.toUri().toString())
+                    )
+                }
             } catch (error: CancellationException) {
+                runOnUiThread { dialog.dismiss() }
                 throw error
             } catch (error: IOException) {
-                showNetworkError(error.message ?: "无法获取网络视频。")
+                runOnUiThread {
+                    dialog.dismiss()
+                    showNetworkError(error.message ?: "无法下载网络视频。")
+                }
             } catch (error: GeneralSecurityException) {
-                showNetworkError(error.message ?: "网络共享身份验证失败。")
+                runOnUiThread {
+                    dialog.dismiss()
+                    showNetworkError(error.message ?: "网络共享身份验证失败。")
+                }
             } catch (error: IllegalArgumentException) {
-                showNetworkError(error.message ?: "网络共享地址无效。")
+                runOnUiThread {
+                    dialog.dismiss()
+                    showNetworkError(error.message ?: "网络共享地址无效。")
+                }
             } finally {
                 isBusy = false
             }
         }
+
+        dialog.show()
     }
 
     private fun formatEntry(entry: NetworkMountEntry): String {
