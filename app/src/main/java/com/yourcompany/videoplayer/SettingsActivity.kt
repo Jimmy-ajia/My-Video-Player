@@ -111,7 +111,7 @@ class SettingsActivity : AppCompatActivity() {
         val nameInput = EditText(this).apply {
             hint = "名称"
             setSingleLine(true)
-            text = mount?.name.orEmpty()
+            setText(mount?.name.orEmpty())
         }
         val addressInput = EditText(this).apply {
             hint = if (type == NetworkMountType.SMB) {
@@ -121,19 +121,19 @@ class SettingsActivity : AppCompatActivity() {
             }
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
-            text = mount?.serverUrl.orEmpty()
+            setText(mount?.serverUrl.orEmpty())
         }
         val domainInput: EditText? = if (type == NetworkMountType.SMB) {
             EditText(this).apply {
                 hint = "域名/工作组（可选）"
                 setSingleLine(true)
-                text = mount?.domain.orEmpty()
+                setText(mount?.domain.orEmpty())
             }
         } else null
         val usernameInput = EditText(this).apply {
             hint = "用户名（可选）"
             setSingleLine(true)
-            text = mount?.username.orEmpty()
+            setText(mount?.username.orEmpty())
         }
         val passwordInput = EditText(this).apply {
             hint = if (mount != null) "密码（留空不变）" else "密码"
@@ -141,7 +141,7 @@ class SettingsActivity : AppCompatActivity() {
             setSingleLine(true)
         }
         val fields = LinearLayout(this).apply {
-            orientation = LinearLayout.Vertical
+            orientation = LinearLayout.VERTICAL
             val padding = (24 * resources.displayMetrics.density).toInt()
             setPadding(padding, padding, padding, 0)
             addView(nameInput)
@@ -255,7 +255,13 @@ class SettingsActivity : AppCompatActivity() {
                 setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.text_primary))
                 textSize = 12f
                 maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.Middle
+                var truncatedText = text.toString()
+                if (truncatedText.length > 80) {
+                    truncatedText = truncatedText.substring(0, 40) + "\n..."
+                } else if (truncatedText.length > 50 && !truncatedText.any { it == '\n' }) {
+                    truncatedText = truncatedText.substring(0, truncatedText.length - 10) + "..."
+                }
+                text = truncatedText
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 

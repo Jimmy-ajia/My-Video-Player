@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "videos")
@@ -91,17 +93,19 @@ abstract class VideoLibraryDatabase : RoomDatabase() {
         @Volatile
         private var instance: VideoLibraryDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE videos ADD COLUMN networkMountId TEXT")
+            }
+        }
+
         fun getInstance(context: Context): VideoLibraryDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     VideoLibraryDatabase::class.java,
                     "video-library.db"
-                ).setMigration(1, 2, object : Migration(1, 2) {
-                    override fun migrate(database: Database, migrationContext: MigrationContext) {
-                        database.execSQL("ALTER TABLE videos ADD COLUMN networkMountId TEXT")
-                    }
-                }).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }

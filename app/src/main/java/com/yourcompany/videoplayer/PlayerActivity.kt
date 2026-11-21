@@ -947,7 +947,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    override fun onDestroy() { 
+    override fun onDestroy() {
         super.onDestroy()
         updateHandler.removeCallbacks(updateProgressAction)
         controllerFuture?.let { MediaController.releaseFuture(it) }
@@ -955,3 +955,4 @@ class PlayerActivity : AppCompatActivity() {
         previewJob?.cancel()
         retrieverInitJob?.cancel()
     }
+}

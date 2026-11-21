@@ -1,6 +1,7 @@
 package com.yourcompany.videoplayer
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
@@ -77,7 +78,7 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
         listView.setOnItemClickListener { _, _, position, _ ->
             val entry = entries.getOrNull(position) ?: return@setOnItemClickListener
-            if (entry.isDirectory) navigateTo(entry.relativePath) else playRemoteVideo(entry)
+            if (entry.isDirectory) navigateTo(entry.relativePath) else lifecycleScope.launch { playRemoteVideo(entry) }
         }
         loadDirectory("")
     }
@@ -127,13 +128,13 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         loadDirectory(parent)
     }
 
-    private fun playRemoteVideo(entry: NetworkMountEntry) {
+    private suspend fun playRemoteVideo(entry: NetworkMountEntry) {
         if (isBusy) return
         isBusy = true
         // Check content length — abort large files that exceed the download limit.
         val maxDownloadSizeMb = 256
         try {
-            val contentLength =  withContext(Dispatchers.IO) {
+            val contentLength = withContext(Dispatchers.IO) {
                 NetworkMountRepository.streamContentLength(mount, entry)
             }
             if (contentLength != null && contentLength!! > maxDownloadSizeMb * 1024L * 1024L) {
@@ -143,17 +144,15 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
             }
         } catch (_: Exception) { /* length check failed — proceed with download */ }
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("正在准备视频")
-            .setCancelable(false)
-            .build()
         val progressBar = ProgressBar(this).apply {
             isIndeterminate = false
             max = 100
             setProgress(0)
-            setMax(progressBar.max)
         }
-        dialog.customView = progressBar
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("正在准备视频")
+            .setCancelable(false)
+            .create().apply { addContentView(progressBar, null) }
 
         lifecycleScope.launch {
             try {
@@ -179,10 +178,20 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
                 runOnUiThread {
                     dialog.dismiss()
                     isBusy = false
-                    startActivity(
-                        Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
-                            .putExtra(PlayerActivity.EXTRA_VIDEO_URI, downloadedFile.toUri().toString())
-                    )
+                    val videoList = listOf(VideoFile(
+                        id = System.nanoTime().coerceIn(Long.MIN_VALUE, Long.MAX_VALUE).toLong(),
+                        path = downloadedFile.absolutePath,
+                        title = entry.name,
+                        folderName = mount.name,
+                        size = downloadedFile.length(),
+                        duration = 0L,
+                        dateModified = downloadedFile.lastModified() / 1000,
+                        mimeType = ""
+                    )) as ArrayList<VideoFile>
+                    val playerIntent = Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
+                        .putExtra("VIDEO_LIST", videoList)
+                    playerIntent.putExtra("POSITION", 0)
+                    startActivity(playerIntent)
                 }
             } catch (error: CancellationException) {
                 runOnUiThread { dialog.dismiss() }

@@ -79,20 +79,24 @@ internal object NetworkMountRepository {
             )
         }
         // SMB without share path: bare IP defaults to root, but full URIs and dot-hostnames require explicit path.
-        if (type == NetworkMountType.SMB) {
-            val host = uri.host.orEmpty()
-            val hasDotHostname = host.contains(".") && !host.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")
-            val isFullUriWithTrailingSlash = trimmed.trimEnd('/') != trimmed && trimmed.endsWith("/")
+        return when (type) {
+            NetworkMountType.SMB -> {
+                val host = uri.host.orEmpty()
+                val isIpv4 = java.util.regex.Pattern.compile("\\A\\d+.\\d+.\\d+.\\d+\\z").matcher(host).matches() || java.util.regex.Pattern.compile("^(\\d+.){3}\\d+$").matcher(host).matches()
+                val hasDotHostname = host.contains('.') && !isIpv4
+                val path = uri.rawPath.orEmpty()
+                val isFullUriWithTrailingSlash = path == "/" && trimmed.contains("://")
 
-            if (isFullUriWithTrailingSlash || hasDotHostname) {
-                throw IllegalArgumentException(
-                    "SMB 地址需要包含共享目录名称。"
-                )
+                if (isFullUriWithTrailingSlash || hasDotHostname) {
+                    throw IllegalArgumentException(
+                        "SMB 地址需要包含共享目录名称。"
+                    )
+                }
+                val sharePath = path.trim('/')
+                "smb://${host.lowercase()}/" +
+                    if (sharePath.isEmpty()) "" else "$sharePath/"
             }
-            // Bare IP defaults to root share
-            "smb://${host.lowercase()}/"
-        } else {
-            trimmed.trimEnd('/') + "/"
+            NetworkMountType.WEBDAV -> trimmed.trimEnd('/') + "/"
         }
     }
 
@@ -165,21 +169,25 @@ internal object NetworkMountRepository {
     fun streamContentLength(
         mount: NetworkMount,
         entry: NetworkMountEntry
-    ): Long? = try {
-        val response = when (mount.type) {
-            NetworkMountType.SMB -> {
-                val url = smbStreamUrl(mount, entry)
-                httpClient.newCall(Request.Builder().url(url).head().build()).execute()
+    ): Long? {
+        try {
+            val response = when (mount.type) {
+                NetworkMountType.SMB -> {
+                    val url = smbStreamUrl(mount, entry)
+                    httpClient.newCall(Request.Builder().url(url).head().build()).execute()
+                }
+                NetworkMountType.WEBDAV -> {
+                    val url = webDavStreamUrl(mount, entry)
+                    httpClient.newCall(Request.Builder().url(url).head().build()).execute()
+                }
             }
-            NetworkMountType.WEBDAV -> {
-                val url = webDavStreamUrl(mount, entry)
-                httpClient.newCall(Request.Builder().url(url).head().build()).execute()
-            }
+            if (response.code == 200 || response.code == 206) {
+                return response.headers("Content-Length")?.firstOrNull()?.toLongOrNull() ?: null
+            } else return null
+        } catch (_: IOException) {
+            return null
         }
-        if (response.code == 200 || response.code == 206) {
-            response.headers("Content-Length")?.firstOrNull()?.toLongOrNull()
-        } else null
-    } catch (_: IOException) null
+    }
 
     private fun smbStreamUrl(mount: NetworkMount, entry: NetworkMountEntry): String {
         val encodedPath = entry.relativePath.split('/')

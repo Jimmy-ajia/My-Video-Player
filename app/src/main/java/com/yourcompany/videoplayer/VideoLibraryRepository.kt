@@ -1,7 +1,6 @@
 package com.yourcompany.videoplayer
 
 import androidx.room.withTransaction
-import java.io.File
 
 internal class VideoLibraryRepository(
     private val videoRepository: VideoRepository,
@@ -39,7 +38,6 @@ internal object VideoCatalogDiff {
     fun calculate(existing: List<VideoEntity>, scan: VideoScanResult): VideoCatalogChanges {
         val existingByPath = existing.associateBy(VideoEntity::path)
         val scannedByPath = scan.videos
-            .map { it.copy(path = File(it.path).canonicalPath) }
             .map(VideoEntity::from)
             .associateBy(VideoEntity::path)
 
@@ -60,8 +58,9 @@ internal object VideoCatalogDiff {
     }
 
     private fun isWithin(path: String, directory: String): Boolean {
-        val normalizedDirectory = directory.trimEnd(File.separatorChar)
-        return path == normalizedDirectory ||
-            path.startsWith(normalizedDirectory + File.separator)
+        val normalizedPath = path.replace('\\', '/').trimEnd('/')
+        val normalizedDirectory = directory.replace('\\', '/').trimEnd('/')
+        return normalizedPath == normalizedDirectory ||
+            normalizedPath.startsWith("$normalizedDirectory/")
     }
 }
