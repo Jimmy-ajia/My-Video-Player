@@ -351,7 +351,7 @@
         android:padding="30dp">
         <ImageView android:layout_width="75dp" android:layout_height="75dp" android:src="@android:drawable/ic_dialog_alert" app:tint="@color/color_error" />
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Playback unavailable" android:textColor="@color/color_error" android:textSize="22sp" android:textStyle="bold" />
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center" android:text="This file uses a legacy encryption format or is not supported by the available players." android:textColor="@android:color/white" android:textSize="15sp" />
+        <TextView android:id="@+id/error_message" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center" android:text="This file uses a legacy encryption format or is not supported by the available players." android:textColor="@android:color/white" android:textSize="15sp" />
         <Button
             android:id="@+id/btn_close_error"
             android:layout_width="wrap_content"

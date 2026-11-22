@@ -1,12 +1,15 @@
 package com.yourcompany.videoplayer
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Environment
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
+import jcifs.smb.SmbRandomAccessFile
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -32,7 +35,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 internal object NetworkMountRepository {
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 60_000
-    private const val VIDEO_CACHE_DIRECTORY = "network-videos"
+    private const val DOWNLOAD_DIRECTORY = "EncryptVideo"
     private const val PROPFIND_BODY =
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
             "<d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/>" +
@@ -106,6 +109,13 @@ internal object NetworkMountRepository {
             NetworkMountType.WEBDAV -> listWebDav(mount, relativePath)
         }
 
+    fun openRandomAccessFile(mount: NetworkMount, relativePath: String): SmbRandomAccessFile {
+        if (mount.type != NetworkMountType.SMB) {
+            throw IOException("Random-access streaming is only supported for SMB shares.")
+        }
+        return smbFile(mount, relativePath, smbContext(mount)).openRandomAccess("r")
+    }
+
     fun download(
         context: Context,
         mount: NetworkMount,
@@ -116,23 +126,26 @@ internal object NetworkMountRepository {
         if (entry.name.substringAfterLast('.', "").lowercase() !in videoExtensions) {
             throw IOException("This file type is not supported.")
         }
-        val cacheDirectory = File(context.cacheDir, VIDEO_CACHE_DIRECTORY)
-        if (!cacheDirectory.isDirectory && !cacheDirectory.mkdirs()) {
-            throw IOException("Unable to create the network video cache.")
+        val downloadDirectory = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            DOWNLOAD_DIRECTORY
+        )
+        if (!downloadDirectory.isDirectory && !downloadDirectory.mkdirs()) {
+            throw IOException("Unable to create the download directory.")
         }
 
         val cacheKey = listOf(mount.id, entry.relativePath, entry.size, entry.modifiedAt)
             .joinToString("|")
         val filename = sha256(cacheKey) + "." +
             entry.name.substringAfterLast('.', "video").lowercase()
-        val target = File(cacheDirectory, filename)
+        val target = File(downloadDirectory, filename)
         if (entry.size > 0 && entry.modifiedAt > 0 && target.isFile &&
             target.length() == entry.size
         ) {
             return target
         }
 
-        val temporary = File(cacheDirectory, ".$filename.${UUID.randomUUID()}.tmp")
+        val temporary = File(downloadDirectory, ".$filename.${UUID.randomUUID()}.tmp")
         try {
             openInputStream(mount, entry).use { input ->
                 BufferedOutputStream(temporary.outputStream()).use { output ->
@@ -153,55 +166,11 @@ internal object NetworkMountRepository {
                 }
             }
             moveIntoPlace(temporary, target)
+            MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), null, null)
             return target
         } finally {
             temporary.delete()
         }
-    }
-
-    /** Returns a URL for direct streaming playback without downloading. */
-    fun streamUrl(mount: NetworkMount, entry: NetworkMountEntry): String =
-        when (mount.type) {
-            NetworkMountType.SMB -> smbStreamUrl(mount, entry)
-            NetworkMountType.WEBDAV -> webDavStreamUrl(mount, entry)
-        }
-
-    fun streamContentLength(
-        mount: NetworkMount,
-        entry: NetworkMountEntry
-    ): Long? {
-        try {
-            val response = when (mount.type) {
-                NetworkMountType.SMB -> {
-                    val url = smbStreamUrl(mount, entry)
-                    httpClient.newCall(Request.Builder().url(url).head().build()).execute()
-                }
-                NetworkMountType.WEBDAV -> {
-                    val url = webDavStreamUrl(mount, entry)
-                    httpClient.newCall(Request.Builder().url(url).head().build()).execute()
-                }
-            }
-            if (response.code == 200 || response.code == 206) {
-                return response.headers("Content-Length")?.firstOrNull()?.toLongOrNull() ?: null
-            } else return null
-        } catch (_: IOException) {
-            return null
-        }
-    }
-
-    private fun smbStreamUrl(mount: NetworkMount, entry: NetworkMountEntry): String {
-        val encodedPath = entry.relativePath.split('/')
-            .filter(String::isNotEmpty)
-            .joinToString("/") { Uri.encode(it) }
-        val suffix = if (encodedPath.isEmpty()) "/" else "/$encodedPath"
-        return mount.serverUrl.trimEnd('/') + suffix
-    }
-
-    private fun webDavStreamUrl(mount: NetworkMount, entry: NetworkMountEntry): String {
-        val encodedPath = entry.relativePath.split('/')
-            .filter(String::isNotEmpty)
-            .joinToString("/") { Uri.encode(it) }
-        return URI(mount.serverUrl).resolve(entry.name).toString()
     }
 
     private fun listSmb(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> {

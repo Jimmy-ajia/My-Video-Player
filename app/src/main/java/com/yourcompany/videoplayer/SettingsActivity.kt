@@ -115,7 +115,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         val addressInput = EditText(this).apply {
             hint = if (type == NetworkMountType.SMB) {
-                "192.168.1.10 或 hostname"
+                "192.168.1.10/共享名 或 smb://..."
             } else {
                 "https://example.com/remote.php/dav/"
             }
@@ -273,9 +273,12 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
 
-            val editButton = android.widget.ImageButton(this).apply {
-                setImageResource(R.drawable.ic_edit)
-                contentDescription = "编辑 ${mount.name}"
+            val menuButton = android.widget.ImageButton(this).apply {
+                setImageResource(R.drawable.ic_more_vert)
+                imageTintList = android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(this@SettingsActivity, R.color.text_primary)
+                )
+                contentDescription = "${mount.name} 更多操作"
                 background = getDrawable(
                     android.util.TypedValue().let { value ->
                         theme.resolveAttribute(
@@ -286,29 +289,23 @@ class SettingsActivity : AppCompatActivity() {
                         value.resourceId
                     }
                 )
-                setOnClickListener { showNetworkMountDialog(mount.type, mount) }
-            }
-
-            val removeButton = android.widget.ImageButton(this).apply {
-                setImageResource(R.drawable.ic_delete)
-                contentDescription = "移除 ${mount.name}"
-                background = getDrawable(
-                    android.util.TypedValue().let { value ->
-                        theme.resolveAttribute(
-                            android.R.attr.selectableItemBackgroundBorderless,
-                            value,
+                setOnClickListener { anchor ->
+                    android.widget.PopupMenu(this@SettingsActivity, anchor).apply {
+                        menu.add("编辑").setOnMenuItemClickListener {
+                            showNetworkMountDialog(mount.type, mount)
                             true
-                        )
-                        value.resourceId
-                    }
-                )
-                setOnClickListener { confirmRemoveNetworkMount(mount) }
+                        }
+                        menu.add("删除").setOnMenuItemClickListener {
+                            confirmRemoveNetworkMount(mount)
+                            true
+                        }
+                    }.show()
+                }
             }
 
             row.addView(label)
             row.addView(browseButton)
-            row.addView(editButton)
-            row.addView(removeButton)
+            row.addView(menuButton)
             container.addView(row)
         }
     }

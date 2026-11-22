@@ -168,7 +168,21 @@ class PlayerActivity : AppCompatActivity() {
                 showControls()
                 startPreviewWorker()
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (error: Exception) {
+            android.util.Log.e("PlayerActivity", "Player initialization failed", error)
+            Toast.makeText(
+                this,
+                "播放器启动失败：${error.localizedMessage ?: error.javaClass.simpleName}",
+                Toast.LENGTH_LONG
+            ).show()
+            finish()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
     }
 
     private fun startPreviewWorker() {
@@ -249,7 +263,29 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
                 override fun onPlayerError(error: PlaybackException) {
-                    startVlcFallback()
+                    val isNetworkVideo = videoList.getOrNull(position)?.networkMountId != null
+                    val detail = error.rootCauseMessage()
+                    val smbFileUnavailable = detail.contains(
+                        "The system cannot find the file specified",
+                        ignoreCase = true
+                    ) || detail.contains("SMB video ended before the requested data was read")
+                    val message = if (isNetworkVideo && smbFileUnavailable) {
+                        "SMB 共享列出了该视频，但读取时服务器返回文件不存在或无数据。请检查共享端文件是否可直接读取及账号权限。"
+                    } else if (isNetworkVideo) {
+                        "SMB 视频读取失败：$detail"
+                    } else {
+                        "视频播放失败（${error.errorCodeName}）：$detail"
+                    }
+                    Toast.makeText(
+                        this@PlayerActivity,
+                        message,
+                        Toast.LENGTH_LONG
+                    ).show()
+                    if (isNetworkVideo) {
+                        showUnsupportedVideo(message)
+                    } else {
+                        startVlcFallback()
+                    }
                 }
             })
             if (videoList.isNotEmpty()) playCurrentVideo()
@@ -290,6 +326,10 @@ class PlayerActivity : AppCompatActivity() {
         retrieverInitJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
                 frameRetriever?.release()
+                if (videoList[position].networkMountId != null) {
+                    frameRetriever = null
+                    return@launch
+                }
                 val retriever = MediaMetadataRetriever()
                 val isEncrypted = VideoFile.isFileEncrypted(this@PlayerActivity, path)
                 
@@ -314,6 +354,8 @@ class PlayerActivity : AppCompatActivity() {
                     val hasLegacyExtension = video.path.substringAfterLast('.', "")
                         .equals(EncryptedMediaContainer.LEGACY_FILE_EXTENSION, ignoreCase = true)
                     val encryptionType = when {
+                        video.networkMountId != null ->
+                            VideoFile.EncryptionType.NONE
                         EncryptedMediaContainer.isContainer(File(video.path)) ->
                             VideoFile.EncryptionType.CURRENT
                         hasLegacyExtension ->
@@ -325,6 +367,8 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     val mediaUri = if (encryptionType == VideoFile.EncryptionType.CURRENT) {
                         EncryptedVideoUri.fromPath(video.path)
+                    } else if (video.networkMountId != null) {
+                        Uri.parse(video.path)
                     } else {
                         Uri.fromFile(File(video.path))
                     }
@@ -341,7 +385,11 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             val encryptionType = withContext(Dispatchers.IO) {
-                VideoFile.encryptionType(this@PlayerActivity, path)
+                if (videoList[position].networkMountId != null) {
+                    VideoFile.EncryptionType.NONE
+                } else {
+                    VideoFile.encryptionType(this@PlayerActivity, path)
+                }
             }
 
             withContext(Dispatchers.Main) {
@@ -355,11 +403,20 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun showUnsupportedVideo() {
+    private fun showUnsupportedVideo(message: String? = null) {
+        message?.let { errorOverlay.findViewById<TextView>(R.id.error_message)?.text = it }
         errorOverlay.visibility = View.VISIBLE
         playerView.visibility = View.GONE
         hideControls()
         controller?.stop()
+    }
+
+    private fun Throwable.rootCauseMessage(): String {
+        var root: Throwable = this
+        while (root.cause != null && root.cause !== root) {
+            root = root.cause!!
+        }
+        return root.message ?: localizedMessage ?: "未知错误"
     }
 
     private fun showEncryptedContainerError() {

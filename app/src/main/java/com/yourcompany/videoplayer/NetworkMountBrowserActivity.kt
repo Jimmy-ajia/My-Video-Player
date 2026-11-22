@@ -1,6 +1,7 @@
 package com.yourcompany.videoplayer
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -78,7 +79,12 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
         listView.setOnItemClickListener { _, _, position, _ ->
             val entry = entries.getOrNull(position) ?: return@setOnItemClickListener
-            if (entry.isDirectory) navigateTo(entry.relativePath) else lifecycleScope.launch { playRemoteVideo(entry) }
+            if (entry.isDirectory) {
+                navigateTo(entry.relativePath)
+            } else {
+                Toast.makeText(this, "已选择视频：${entry.name}", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch { playRemoteVideo(entry) }
+            }
         }
         loadDirectory("")
     }
@@ -129,43 +135,65 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     }
 
     private suspend fun playRemoteVideo(entry: NetworkMountEntry) {
-        if (isBusy) return
+        if (isBusy) {
+            Toast.makeText(this, "正在处理其他项目，请稍候。", Toast.LENGTH_SHORT).show()
+            return
+        }
         isBusy = true
-        // Check content length — abort large files that exceed the download limit.
-        val maxDownloadSizeMb = 256
-        try {
-            val contentLength = withContext(Dispatchers.IO) {
-                NetworkMountRepository.streamContentLength(mount, entry)
-            }
-            if (contentLength != null && contentLength!! > maxDownloadSizeMb * 1024L * 1024L) {
-                showNetworkError("该视频文件是 $((maxDownloadSizeMb + 1).toString()) MB，超出最大下载限制。")
+        if (mount.type == NetworkMountType.SMB) {
+            try {
+                val uri = NetworkVideoUri.create(mount.id, entry.relativePath, entry.size)
+                val video = VideoFile(
+                    id = uri.toString().hashCode().toLong(),
+                    path = uri.toString(),
+                    title = entry.name,
+                    folderName = mount.name,
+                    size = entry.size,
+                    duration = 0L,
+                    dateModified = entry.modifiedAt / 1000,
+                    networkMountId = mount.id
+                )
+                Toast.makeText(this, "正在通过 SMB 边下边播。", Toast.LENGTH_SHORT).show()
+                startActivity(
+                    Intent(this, PlayerActivity::class.java)
+                        .putExtra("VIDEO_LIST", arrayListOf(video))
+                        .putExtra("POSITION", 0)
+                )
+            } catch (error: IOException) {
+                showNetworkError(error.message ?: "无法打开 SMB 视频。")
+            } catch (error: IllegalArgumentException) {
+                showNetworkError(error.message ?: "SMB 视频地址无效。")
+            } finally {
                 isBusy = false
-                return
             }
-        } catch (_: Exception) { /* length check failed — proceed with download */ }
+            return
+        }
+        Toast.makeText(this, "正在读取共享视频，下载完成后启动播放器。", Toast.LENGTH_LONG).show()
 
         val progressBar = ProgressBar(this).apply {
-            isIndeterminate = false
+            isIndeterminate = entry.size <= 0
             max = 100
             setProgress(0)
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("正在准备视频")
+            .setView(progressBar)
             .setCancelable(false)
-            .create().apply { addContentView(progressBar, null) }
+            .create()
+        dialog.show()
 
-        lifecycleScope.launch {
-            try {
-                val downloadedFile = withContext(Dispatchers.IO) {
-                    NetworkMountRepository.download(applicationContext, mount, entry) { percent ->
-                        runOnUiThread {
-                            progressBar.isIndeterminate = false
-                            progressBar.progress = percent.coerceIn(0, 100)
-                        }
+        try {
+            val downloadedFile = withContext(Dispatchers.IO) {
+                NetworkMountRepository.download(applicationContext, mount, entry) { percent ->
+                    runOnUiThread {
+                        progressBar.isIndeterminate = false
+                        progressBar.progress = percent.coerceIn(0, 100)
                     }
                 }
+            }
 
-                val video = VideoFile(
+            val videoList = arrayListOf(
+                VideoFile(
                     id = downloadedFile.absolutePath.hashCode().toLong(),
                     path = downloadedFile.absolutePath,
                     title = entry.name,
@@ -174,49 +202,26 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
                     duration = 0L,
                     dateModified = downloadedFile.lastModified() / 1000
                 )
-
-                runOnUiThread {
-                    dialog.dismiss()
-                    isBusy = false
-                    val videoList = listOf(VideoFile(
-                        id = System.nanoTime().coerceIn(Long.MIN_VALUE, Long.MAX_VALUE).toLong(),
-                        path = downloadedFile.absolutePath,
-                        title = entry.name,
-                        folderName = mount.name,
-                        size = downloadedFile.length(),
-                        duration = 0L,
-                        dateModified = downloadedFile.lastModified() / 1000,
-                        mimeType = ""
-                    )) as ArrayList<VideoFile>
-                    val playerIntent = Intent(this@NetworkMountBrowserActivity, PlayerActivity::class.java)
-                        .putExtra("VIDEO_LIST", videoList)
-                    playerIntent.putExtra("POSITION", 0)
-                    startActivity(playerIntent)
-                }
-            } catch (error: CancellationException) {
-                runOnUiThread { dialog.dismiss() }
-                throw error
-            } catch (error: IOException) {
-                runOnUiThread {
-                    dialog.dismiss()
-                    showNetworkError(error.message ?: "无法下载网络视频。")
-                }
-            } catch (error: GeneralSecurityException) {
-                runOnUiThread {
-                    dialog.dismiss()
-                    showNetworkError(error.message ?: "网络共享身份验证失败。")
-                }
-            } catch (error: IllegalArgumentException) {
-                runOnUiThread {
-                    dialog.dismiss()
-                    showNetworkError(error.message ?: "网络共享地址无效。")
-                }
-            } finally {
-                isBusy = false
-            }
+            )
+            val playerIntent = Intent(this, PlayerActivity::class.java)
+                .putExtra("VIDEO_LIST", videoList)
+                .putExtra("POSITION", 0)
+            Toast.makeText(this, "视频已下载，正在启动播放器。", Toast.LENGTH_SHORT).show()
+            startActivity(playerIntent)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IOException) {
+            showNetworkError(error.message ?: "无法下载网络视频。")
+        } catch (error: ActivityNotFoundException) {
+            showNetworkError(error.message ?: "无法启动播放器。")
+        } catch (error: GeneralSecurityException) {
+            showNetworkError(error.message ?: "网络共享身份验证失败。")
+        } catch (error: IllegalArgumentException) {
+            showNetworkError(error.message ?: "网络共享地址无效。")
+        } finally {
+            dialog.dismiss()
+            isBusy = false
         }
-
-        dialog.show()
     }
 
     private fun formatEntry(entry: NetworkMountEntry): String {
@@ -233,6 +238,7 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
 
     private fun showNetworkError(message: String) {
         status.text = message
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         AlertDialog.Builder(this)
             .setTitle("网络共享错误")
             .setMessage(message)

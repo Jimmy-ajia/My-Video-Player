@@ -5,6 +5,16 @@ import org.junit.Test
 
 class NetworkMountRepositoryTest {
     @Test
+    fun usesListedFileLengthWhenSmbMetadataReportsZero() {
+        assertEquals(15_000_000L, NetworkVideoUri.effectiveFileLength(0L, 15_000_000L))
+    }
+
+    @Test
+    fun prefersReportedSmbFileLengthWhenAvailable() {
+        assertEquals(14_000_000L, NetworkVideoUri.effectiveFileLength(14_000_000L, 15_000_000L))
+    }
+
+    @Test
     fun normalizesSmbShareAddress() {
         assertEquals(
             "smb://192.168.1.10/videos/",
@@ -49,6 +59,17 @@ class NetworkMountRepositoryTest {
             NetworkMountRepository.normalizeServerUrl(
                 NetworkMountType.SMB,
                 "192.168.1.10"
+            )
+        )
+    }
+
+    @Test
+    fun normalizesBareIpWithShareName() {
+        assertEquals(
+            "smb://192.168.31.236/g/",
+            NetworkMountRepository.normalizeServerUrl(
+                NetworkMountType.SMB,
+                "192.168.31.236/g"
             )
         )
     }

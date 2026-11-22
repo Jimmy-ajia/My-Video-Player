@@ -98,7 +98,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="添加 SMB（SMB 2/3）或 HTTPS WebDAV 地址。账号密码使用本机 Android Keystore 加密保存；首次播放会下载到应用临时缓存后播放。"
+                        android:text="添加 SMB（SMB 2/3）或 HTTPS WebDAV 地址。账号密码使用本机 Android Keystore 加密保存；SMB 视频边下边播，WebDAV 视频下载完成后播放。"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 

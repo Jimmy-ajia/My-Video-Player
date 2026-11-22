@@ -7,9 +7,8 @@ internal class VideoLibraryRepository(
     private val database: VideoLibraryDatabase
 ) {
     fun observeVideos(sortOrder: VideoSortOrder) = when (sortOrder) {
-        VideoSortOrder.MODIFIED_DESC -> database.videoDao().observeByModifiedDate()
-        VideoSortOrder.NAME_ASC -> database.videoDao().observeByNameAscending()
-        VideoSortOrder.NAME_DESC -> database.videoDao().observeByNameDescending()
+        VideoSortOrder.MODIFIED_DESC -> database.videoDao().observeByModifiedDateDescending()
+        VideoSortOrder.MODIFIED_ASC -> database.videoDao().observeByModifiedDateAscending()
     }
 
     suspend fun refresh(directoryPaths: List<String>) {
