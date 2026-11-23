@@ -70,6 +70,7 @@ internal class MainVideoAdapter(
         val video = getItem(position)
         holder.boundPath = video.path
         holder.title.text = video.displayTitle
+        holder.meta.text = "${video.formattedDuration} · ${video.formattedDate}"
         bindRecentHighlight(holder, video)
         holder.thumbnail.setImageResource(R.drawable.ic_video)
         holder.encryptionState.text = "检查加密状态…"
@@ -268,6 +269,7 @@ internal class MainVideoAdapter(
         val card: MaterialCardView = view.findViewById(R.id.main_video_card)
         val thumbnail: ShapeableImageView = view.findViewById(R.id.main_video_thumbnail)
         val title: TextView = view.findViewById(R.id.main_video_title)
+        val meta: TextView = view.findViewById(R.id.main_video_meta)
         val encryptionState: TextView = view.findViewById(R.id.main_video_encryption_state)
         val encryptionToggle: ImageButton = view.findViewById(R.id.main_video_encryption_toggle)
         val selectionCheckbox: CheckBox = view.findViewById(R.id.main_video_selection_checkbox)

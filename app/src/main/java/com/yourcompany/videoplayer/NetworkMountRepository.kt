@@ -1,6 +1,8 @@
 package com.yourcompany.videoplayer
 
 import android.content.Context
+import android.media.MediaDataSource
+import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
@@ -19,6 +21,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -29,6 +32,7 @@ import java.time.format.DateTimeParseException
 import java.time.format.DateTimeFormatter
 import java.util.Properties
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -50,6 +54,67 @@ internal object NetworkMountRepository {
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
+    private val durationCache = ConcurrentHashMap<String, Long>()
+
+    private fun durationKey(mount: NetworkMount, entry: NetworkMountEntry): String =
+        "${mount.id}|${entry.relativePath}|${entry.size}|${entry.modifiedAt}"
+
+    /** Previously probed duration in milliseconds, or null when it has not been read yet. */
+    fun cachedDurationMillis(mount: NetworkMount, entry: NetworkMountEntry): Long? =
+        if (entry.isDirectory) 0L else durationCache[durationKey(mount, entry)]
+
+    /** Reads just enough metadata from the share to determine the video duration. */
+    fun probeDurationMillis(mount: NetworkMount, entry: NetworkMountEntry): Long {
+        if (entry.isDirectory) return 0L
+        val key = durationKey(mount, entry)
+        durationCache[key]?.let { return it }
+        val source = try {
+            openMediaDataSource(mount, entry)
+        } catch (_: Exception) {
+            return 0L
+        }
+        var retriever: MediaMetadataRetriever? = null
+        val duration = try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(source)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+        } catch (_: Exception) {
+            0L
+        } finally {
+            try {
+                retriever?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                source.close()
+            } catch (_: Exception) {
+            }
+        }
+        durationCache[key] = duration
+        return duration
+    }
+
+    private fun openMediaDataSource(
+        mount: NetworkMount,
+        entry: NetworkMountEntry
+    ): MediaDataSource = when (mount.type) {
+        NetworkMountType.SMB -> SmbMediaDataSource(
+            openRandomAccessFile(mount, entry.relativePath)
+        )
+        NetworkMountType.WEBDAV -> WebDavMediaDataSource(
+            client = httpClient,
+            length = entry.size,
+            requestBuilder = {
+                webDavRequest(
+                    mount,
+                    webDavUrl(mount, entry.relativePath, directory = false),
+                    "GET",
+                    null
+                ).newBuilder()
+            }
+        )
+    }
 
     fun normalizeServerUrl(type: NetworkMountType, value: String): String {
         val trimmed = value.trim()
@@ -405,6 +470,80 @@ internal object NetworkMountRepository {
             )
         } catch (_: AtomicMoveNotSupportedException) {
             Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+}
+
+private class SmbMediaDataSource(
+    private val file: SmbRandomAccessFile
+) : MediaDataSource() {
+    private val length = file.length()
+
+    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+        if (length <= 0L || position >= length) return -1
+        return synchronized(this) {
+            file.seek(position)
+            file.read(buffer, offset, minOf(size.toLong(), length - position).toInt())
+        }
+    }
+
+    override fun getSize(): Long = length
+
+    override fun close() {
+        try {
+            file.close()
+        } catch (_: IOException) {
+        }
+    }
+}
+
+private class WebDavMediaDataSource(
+    private val client: OkHttpClient,
+    private val length: Long,
+    private val requestBuilder: () -> Request.Builder
+) : MediaDataSource() {
+    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+        if (size <= 0) return 0
+        if (length > 0L && position >= length) return -1
+
+        val end = if (length > 0L) {
+            minOf(length - 1, position + size - 1)
+        } else {
+            position + size - 1
+        }
+        val request = requestBuilder()
+            .header("Range", "bytes=$position-$end")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("WebDAV range read failed (HTTP ${response.code}).")
+            }
+            val body = response.body ?: throw IOException("WebDAV returned an empty body.")
+            body.byteStream().use { input ->
+                // Servers that ignore Range reply with the whole file; skip to the offset.
+                if (response.code == 200 && position > 0L) skipFully(input, position)
+                var total = 0
+                while (total < size) {
+                    val read = input.read(buffer, offset + total, size - total)
+                    if (read < 0) break
+                    total += read
+                }
+                return if (total == 0) -1 else total
+            }
+        }
+    }
+
+    override fun getSize(): Long = if (length > 0L) length else -1L
+
+    override fun close() = Unit
+
+    private fun skipFully(input: InputStream, count: Long) {
+        var remaining = count
+        val discard = ByteArray(8 * 1024)
+        while (remaining > 0L) {
+            val read = input.read(discard, 0, minOf(discard.size.toLong(), remaining).toInt())
+            if (read < 0) throw IOException("The WebDAV stream ended before the requested offset.")
+            remaining -= read
         }
     }
 }

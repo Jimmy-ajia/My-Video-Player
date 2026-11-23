@@ -5,7 +5,6 @@ import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -19,6 +18,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.security.GeneralSecurityException
@@ -29,11 +30,15 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var progress: ProgressBar
     private lateinit var listView: ListView
-    private lateinit var listAdapter: ArrayAdapter<String>
+    private lateinit var listAdapter: NetworkMountEntryAdapter
     private var entries: List<NetworkMountEntry> = emptyList()
     private var currentPath = ""
     private var isBusy = false
     private lateinit var backCallback: OnBackPressedCallback
+    private val durationMillis = mutableMapOf<String, Long>()
+    private val pendingDurationRequests = mutableSetOf<String>()
+    private val durationSemaphore = Semaphore(3)
+    private var directoryGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,7 +47,11 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         status = findViewById(R.id.network_mount_status)
         progress = findViewById(R.id.network_mount_progress)
         listView = findViewById(R.id.network_mount_entries)
-        listAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        listAdapter = NetworkMountEntryAdapter(
+            context = this,
+            durationMillis = { entry -> durationMillis[durationKey(entry)] },
+            onDurationNeeded = ::requestDuration
+        )
         listView.adapter = listAdapter
 
         val mountId = intent.getStringExtra(EXTRA_MOUNT_ID)
@@ -92,19 +101,26 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     private fun loadDirectory(path: String) {
         if (isBusy) return
         currentPath = path
+        directoryGeneration++
         backCallback.isEnabled = currentPath.isNotEmpty()
         isBusy = true
         progress.isIndeterminate = true
         progress.visibility = View.VISIBLE
         status.text = if (path.isEmpty()) mount.serverUrl else "${mount.serverUrl}$path/"
+        val generation = directoryGeneration
         lifecycleScope.launch {
             try {
                 val listedEntries = withContext(Dispatchers.IO) {
                     NetworkMountRepository.list(mount, path)
                 }
+                if (generation != directoryGeneration) return@launch
                 entries = listedEntries
-                listAdapter.clear()
-                listAdapter.addAll(listedEntries.map(::formatEntry))
+                listedEntries.filter { !it.isDirectory }.forEach { entry ->
+                    NetworkMountRepository.cachedDurationMillis(mount, entry)?.let {
+                        durationMillis[durationKey(entry)] = it
+                    }
+                }
+                listAdapter.entries = listedEntries
                 status.text = if (listedEntries.isEmpty()) {
                     "此目录中没有支持的视频或子目录。"
                 } else {
@@ -224,16 +240,36 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatEntry(entry: NetworkMountEntry): String {
-        val prefix = if (entry.isDirectory) "[目录]" else "[视频]"
-        val size = if (entry.isDirectory || entry.size <= 0) "" else " · ${formatSize(entry.size)}"
-        return "$prefix ${entry.name}$size"
-    }
+    private fun durationKey(entry: NetworkMountEntry): String =
+        "${entry.relativePath}|${entry.size}|${entry.modifiedAt}"
 
-    private fun formatSize(bytes: Long): String {
-        val mb = bytes / (1024.0 * 1024.0)
-        return if (mb >= 1.0) String.format("%.1f MB", mb)
-        else "${bytes / 1024} KB"
+    private fun requestDuration(entry: NetworkMountEntry) {
+        if (entry.isDirectory) return
+        val key = durationKey(entry)
+        if (durationMillis.containsKey(key) || !pendingDurationRequests.add(key)) return
+        val generation = directoryGeneration
+        lifecycleScope.launch {
+            try {
+                val millis = withContext(Dispatchers.IO) {
+                    durationSemaphore.withPermit {
+                        NetworkMountRepository.probeDurationMillis(mount, entry)
+                    }
+                }
+                if (generation == directoryGeneration) {
+                    durationMillis[key] = millis
+                    listAdapter.notifyDataSetChanged()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (generation == directoryGeneration) {
+                    durationMillis[key] = 0L
+                    listAdapter.notifyDataSetChanged()
+                }
+            } finally {
+                pendingDurationRequests.remove(key)
+            }
+        }
     }
 
     private fun showNetworkError(message: String) {

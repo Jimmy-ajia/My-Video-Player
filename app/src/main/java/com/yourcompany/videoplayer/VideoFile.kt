@@ -4,6 +4,8 @@ import android.content.Context
 import java.io.File
 import java.io.RandomAccessFile
 import java.io.Serializable
+import java.time.Instant
+import java.time.ZoneId
 
 data class VideoFile(
     val id: Long,
@@ -19,6 +21,7 @@ data class VideoFile(
 
     val formattedDuration: String get() = formatDuration(duration)
     val formattedSize: String get() = formatSize(size)
+    val formattedDate: String get() = formatDate(dateModified)
     val displayTitle: String get() = if (title.isNotBlank() && title != "Unknown") title else path.substringAfterLast("/")
 
     enum class EncryptionType { NONE, CURRENT, LEGACY }
@@ -34,6 +37,15 @@ data class VideoFile(
             val hours = (durationMs / (1000 * 60 * 60))
             return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds)
             else String.format("%02d:%02d", minutes, seconds)
+        }
+
+        /** Formats the stored modification timestamp (epoch seconds) as yyyy-MM-dd. */
+        fun formatDate(dateModifiedSeconds: Long): String {
+            if (dateModifiedSeconds <= 0) return "--"
+            return Instant.ofEpochSecond(dateModifiedSeconds)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+                .toString()
         }
 
         private fun formatSize(bytes: Long): String {

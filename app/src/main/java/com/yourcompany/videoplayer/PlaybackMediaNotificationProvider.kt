@@ -19,6 +19,7 @@ internal class PlaybackMediaNotificationProvider(context: Context) :
         .setChannelId("playback_channel")
         .setChannelName(R.string.app_name)
         .build()
+        .apply { setSmallIcon(R.drawable.ic_stat_play) }
     private val handler = Handler(Looper.getMainLooper())
     private var activeSession: MediaSession? = null
     private var mediaButtons: ImmutableList<CommandButton> = ImmutableList.of()
