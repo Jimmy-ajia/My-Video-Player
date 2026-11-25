@@ -55,7 +55,9 @@ data class VideoEntity(
 
 enum class VideoSortOrder(val preferenceValue: String, val label: String) {
     MODIFIED_DESC("modified_desc", "修改时间降序（最新优先）"),
-    MODIFIED_ASC("modified_asc", "修改时间升序（最早优先）");
+    MODIFIED_ASC("modified_asc", "修改时间升序（最早优先）"),
+    NAME_ASC("name_asc", "名称升序（A-Z）"),
+    NAME_DESC("name_desc", "名称降序（Z-A）");
 
     companion object {
         fun fromPreference(value: String?): VideoSortOrder =
@@ -70,6 +72,12 @@ interface VideoDao {
 
     @Query("SELECT * FROM videos ORDER BY dateModified ASC, title COLLATE NOCASE ASC, path ASC")
     fun observeByModifiedDateAscending(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos ORDER BY title COLLATE NOCASE ASC, path ASC")
+    fun observeByNameAscending(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos ORDER BY title COLLATE NOCASE DESC, path DESC")
+    fun observeByNameDescending(): Flow<List<VideoEntity>>
 
     @Query("SELECT * FROM videos")
     suspend fun getAll(): List<VideoEntity>
