@@ -1,5 +1,6 @@
 package com.yourcompany.videoplayer
 
+import android.content.Context
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.net.Uri
@@ -8,12 +9,14 @@ import android.view.View
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +33,7 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var progress: ProgressBar
     private lateinit var listView: ListView
+    private lateinit var sortIcon: ImageView
     private lateinit var listAdapter: NetworkMountEntryAdapter
     private var entries: List<NetworkMountEntry> = emptyList()
     private var currentPath = ""
@@ -47,6 +51,8 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         status = findViewById(R.id.network_mount_status)
         progress = findViewById(R.id.network_mount_progress)
         listView = findViewById(R.id.network_mount_entries)
+        sortIcon = findViewById(R.id.network_mount_sort_icon)
+
         listAdapter = NetworkMountEntryAdapter(
             context = this,
             durationMillis = { entry -> durationMillis[durationKey(entry)] },
@@ -80,12 +86,18 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener {
             if (currentPath.isEmpty()) finish() else navigateUp()
         }
+
+        sortIcon.setOnClickListener {
+            showSortMenu()
+        }
+
         backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() {
                 navigateUp()
             }
         }
         onBackPressedDispatcher.addCallback(this, backCallback)
+
         listView.setOnItemClickListener { _, _, position, _ ->
             val entry = entries.getOrNull(position) ?: return@setOnItemClickListener
             if (entry.isDirectory) {
@@ -98,6 +110,36 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         loadDirectory("")
     }
 
+    private fun showSortMenu() {
+        val popup = PopupMenu(this, sortIcon)
+        VideoSortOrder.entries.forEachIndexed { index, order ->
+            popup.menu.add(0, index, index, order.label).isCheckable = true
+        }
+        popup.menu.setGroupCheckable(0, true, true)
+        popup.menu.findItem(currentSortOrder().ordinal)?.isChecked = true
+        popup.setOnMenuItemClickListener { item ->
+            val selectedOrder = VideoSortOrder.entries.getOrNull(item.itemId)
+                ?: return@setOnMenuItemClickListener false
+            saveSortOrder(selectedOrder)
+            loadDirectory(currentPath)
+            true
+        }
+        popup.show()
+    }
+
+    private fun currentSortOrder(): VideoSortOrder =
+        VideoSortOrder.fromPreference(
+            getSharedPreferences(VideoLibraryViewModel.SORT_PREFERENCES, Context.MODE_PRIVATE)
+                .getString(VideoLibraryViewModel.SORT_ORDER_KEY, null)
+        )
+
+    private fun saveSortOrder(order: VideoSortOrder) {
+        getSharedPreferences(VideoLibraryViewModel.SORT_PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putString(VideoLibraryViewModel.SORT_ORDER_KEY, order.preferenceValue)
+            .apply()
+    }
+
     private fun loadDirectory(path: String) {
         if (isBusy) return
         currentPath = path
@@ -108,10 +150,11 @@ class NetworkMountBrowserActivity : AppCompatActivity() {
         progress.visibility = View.VISIBLE
         status.text = if (path.isEmpty()) mount.serverUrl else "${mount.serverUrl}$path/"
         val generation = directoryGeneration
+        val sortOrder = currentSortOrder()
         lifecycleScope.launch {
             try {
                 val listedEntries = withContext(Dispatchers.IO) {
-                    NetworkMountRepository.list(mount, path)
+                    NetworkMountRepository.list(mount, path, sortOrder)
                 }
                 if (generation != directoryGeneration) return@launch
                 entries = listedEntries

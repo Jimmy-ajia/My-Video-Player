@@ -72,7 +72,7 @@ class VideoLibraryViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    private companion object {
+    companion object {
         const val SORT_PREFERENCES = "VIDEO_LIST"
         const val SORT_ORDER_KEY = "SORT_ORDER"
     }

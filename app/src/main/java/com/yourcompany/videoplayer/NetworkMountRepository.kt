@@ -168,10 +168,14 @@ internal object NetworkMountRepository {
         }
     }
 
-    fun list(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> =
+    fun list(
+        mount: NetworkMount,
+        relativePath: String,
+        sortOrder: VideoSortOrder = VideoSortOrder.MODIFIED_DESC
+    ): List<NetworkMountEntry> =
         when (mount.type) {
-            NetworkMountType.SMB -> listSmb(mount, relativePath)
-            NetworkMountType.WEBDAV -> listWebDav(mount, relativePath)
+            NetworkMountType.SMB -> listSmb(mount, relativePath, sortOrder)
+            NetworkMountType.WEBDAV -> listWebDav(mount, relativePath, sortOrder)
         }
 
     fun openRandomAccessFile(mount: NetworkMount, relativePath: String): SmbRandomAccessFile {
@@ -238,7 +242,11 @@ internal object NetworkMountRepository {
         }
     }
 
-    private fun listSmb(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> {
+    private fun listSmb(
+        mount: NetworkMount,
+        relativePath: String,
+        sortOrder: VideoSortOrder
+    ): List<NetworkMountEntry> {
         val context = smbContext(mount)
         val directory = smbFile(mount, relativePath, context)
         if (!directory.exists() || !directory.isDirectory) {
@@ -265,10 +273,14 @@ internal object NetworkMountRepository {
                     modifiedAt = child.lastModified()
                 )
             }
-            .sortedWith(compareBy<NetworkMountEntry> { !it.isDirectory }.thenBy { it.name.lowercase() })
+            .sortedWith(sortEntries(sortOrder))
     }
 
-    private fun listWebDav(mount: NetworkMount, relativePath: String): List<NetworkMountEntry> {
+    private fun listWebDav(
+        mount: NetworkMount,
+        relativePath: String,
+        sortOrder: VideoSortOrder
+    ): List<NetworkMountEntry> {
         val request = webDavRequest(
             mount,
             webDavUrl(mount, relativePath, directory = true),
@@ -313,16 +325,32 @@ internal object NetworkMountRepository {
                             ?.let(::parseHttpDate) ?: 0L
                         NetworkMountEntry(name, childPath, isDirectory, size, modifiedAt)
                     }
-                    .sortedWith(
-                        compareBy<NetworkMountEntry> { !it.isDirectory }
-                            .thenBy { it.name.lowercase() }
-                    )
+                    .sortedWith(sortEntries(sortOrder))
             }
         } catch (error: IOException) {
             throw error
         } catch (error: Exception) {
             throw IOException("WebDAV returned an invalid directory listing.", error)
         }
+    }
+
+    private fun sortEntries(order: VideoSortOrder): Comparator<NetworkMountEntry> {
+        val comparator = when (order) {
+            VideoSortOrder.MODIFIED_DESC ->
+                compareByDescending<NetworkMountEntry> { it.modifiedAt }
+                    .thenBy { it.name.lowercase() }
+            VideoSortOrder.MODIFIED_ASC ->
+                compareBy<NetworkMountEntry> { it.modifiedAt }
+                    .thenBy { it.name.lowercase() }
+            VideoSortOrder.NAME_ASC ->
+                compareBy<NetworkMountEntry> { it.name.lowercase() }
+                    .thenBy { it.modifiedAt }
+            VideoSortOrder.NAME_DESC ->
+                compareByDescending<NetworkMountEntry> { it.name.lowercase() }
+                    .thenByDescending { it.modifiedAt }
+        }
+        // Keep directories grouped ahead of files, matching the previous browser behaviour.
+        return compareBy<NetworkMountEntry> { !it.isDirectory }.then(comparator)
     }
 
     private fun webDavRelativePath(mount: NetworkMount, href: String): String {
